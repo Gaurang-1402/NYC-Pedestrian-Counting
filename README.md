@@ -18,6 +18,8 @@ Windows
 Linux
 ```
 esptool --chip auto --no-stub --port /dev/ttyACM0 --baud 460800  --after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size 8MB 0x0 bootloader.bin 0x8000 partition-table.bin 0x10000 yolo.bin
+```
 
-
+```
+idf.py flash -b 460800 monitor
 ```

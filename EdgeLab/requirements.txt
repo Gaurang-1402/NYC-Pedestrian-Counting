@@ -1,7 +1,0 @@
-# pip
--r requirements/pytorch_cpu.txt
--r requirements/base.txt
--r requirements/inference.txt
-
-# mim
--r requirements/mmlab.txt

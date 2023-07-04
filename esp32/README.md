@@ -6,8 +6,7 @@
   <h3> <a href="https://edgelab.readthedocs.io/en/latest/"> Documentation </a> | <a href="https://edgelab.readthedocs.io/zh_CN/latest/"> 中文文档 </a>  </h3>
 </div>
 
-English | [简体中文](README_zh-CN.md)
-
+English 
 - [Introduction](#introduction)
 - [How to Install](#how-to-install)
   * [Install the ESP IDF](#install-the-esp-idf)
@@ -91,23 +90,6 @@ The performance of the EdgeLab-related models, measured on different chipsets, i
 | ESP32-S3  |          Fomo          | [custom]()|96x96 (GRAY)| 244KB |    150ms    |  99.5%|[fomo_mask_int8.tflite](https://github.com/Seeed-Studio/edgelab-example-esp32/blob/main/model_zoo/fomo_mask_int8.tflite)|
 
 
-### Demonstration
 
-#### Meter Reading
-
-![meter_reading](./docs/_static/esp32/images/meter_reading.gif)
-
-
-## Contributing
-- If you find an issue in these examples, or wish to submit an enhancement request, please use the Issues section on Github.
-- For ESP-IDF related issues please use [esp-idf](https://github.com/espressif/esp-idf) repo.
-- For TensorFlow related information use [tflite-micro](https://github.com/tensorflow/tflite-micro) repo.
-- For EdgeLab use [EdgeLab](https://github.com/seeed-studio/EdgeLab) repo.
-
-## License
-
-These examples are covered under MIT License.
-
-These examples use the ESP-IDF which is covered under Apache License 2.0.
 
 TensorFlow library code and third_party code contains their own license specified under respective [repos](https://github.com/tensorflow/tflite-micro).

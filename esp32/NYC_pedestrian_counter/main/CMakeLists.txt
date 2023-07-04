@@ -1,4 +1,6 @@
-idf_component_register( SRCS 
-							app_main.cpp
-                            INCLUDE_DIRS .
-                        )
+set(component_srcs "main.cpp")
+
+idf_component_register(SRCS "${component_srcs}"
+                       INCLUDE_DIRS ".")
+
+

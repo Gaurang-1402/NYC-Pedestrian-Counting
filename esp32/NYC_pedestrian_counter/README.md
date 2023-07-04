@@ -37,11 +37,11 @@ idf.py menuconfig
 
 Now, pick "LoRa Configuration" option
 
-![Screenshot from 2023-07-04 12-33-33](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/6a6d49f2-4469-44d5-9b69-185086f252d2)
+![Screenshot from 2023-07-04 12-32-44](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/6b3f1fde-7462-482e-a148-9ad49241c606)
 
 Here is what it should look like if you follow the above hardware configuration
 
-![Screenshot from 2023-07-04 12-32-44](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/6b3f1fde-7462-482e-a148-9ad49241c606)
+![Screenshot from 2023-07-04 12-33-33](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/6a6d49f2-4469-44d5-9b69-185086f252d2)
 
 
 # Software Configuration  

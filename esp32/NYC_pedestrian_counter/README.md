@@ -15,6 +15,8 @@ Here is the schematic of the RFM915W
 
 ![image](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/42063aad-0dc3-48f7-91b5-c163840614e0)
 
+Note: You will have to attach an antenna to the Lora module.
+
 Here is the recommended pin configurations
 
 Pin | Signal

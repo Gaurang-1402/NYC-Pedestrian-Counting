@@ -31,11 +31,7 @@ G1 | GPIO3
 
 We will also have to set the pin configuration in the software to correspond to the hardware
 
-Run
 
-```
-idf.py menuconfig
-```
 ## Set the target
 
 Set the target to the correct variant of the ESP32 chip (*esp32*, *esp32s2*, *esp32s3* etc.):
@@ -56,6 +52,10 @@ idf.py menuconfig
 ```
 
 In the menu, select `Component config --->` and then select `The Things Network --->` (at the very bottom). Now select `TTN LoRa frequency / region (LoRa disabled) --->` and choose the correct frequency plan. Then select `Exit` several times and confirm that the new configuration should be saved.
+
+This should be the final setup in your menu:
+
+![Screenshot from 2023-07-12 23-23-17](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/f9332487-8f0e-4971-ab0f-43c4fd4a292f)
 
 
 

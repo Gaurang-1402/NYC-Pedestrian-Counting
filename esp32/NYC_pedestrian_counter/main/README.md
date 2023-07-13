@@ -13,7 +13,9 @@ Here is the schematic of XIAO ESP32S3
 
 Here is the schematic of the RFM915W
 
-![image](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/42063aad-0dc3-48f7-91b5-c163840614e0)
+![3072-14](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/539105ba-209b-4cc4-aea2-5b7ab067a837)
+
+The "G" in "G0", "G1", "G2" etc stand for "GPIO"
 
 Note: You will have to attach an antenna to the Lora module.
 

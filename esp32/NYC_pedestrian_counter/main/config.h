@@ -1,0 +1,16 @@
+// config.h
+
+#define APPEUI "1234567890123567"
+#define DEVEUI "70B3D57ED005F7AC"
+#define APPKEY "131BF10C7E7434DB223232813EA61DC0"
+
+#define TTN_SPI_HOST      SPI2_HOST
+#define TTN_SPI_DMA_CHAN  SPI_DMA_DISABLED
+#define TTN_PIN_SPI_SCLK  7
+#define TTN_PIN_SPI_MOSI  9
+#define TTN_PIN_SPI_MISO  8
+#define TTN_PIN_NSS       1
+#define TTN_PIN_RXTX      TTN_NOT_CONNECTED
+#define TTN_PIN_RST       2
+#define TTN_PIN_DIO0      4
+#define TTN_PIN_DIO1      3

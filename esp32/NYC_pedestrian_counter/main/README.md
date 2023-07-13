@@ -1,6 +1,8 @@
 # TTN LoRaWAN Communication
 
-Simple send or receive.   
+It is recommended that you read from and understand the following links:
+1) https://github.com/manuelbl/ttn-esp32/wiki
+2) https://circuitdigest.com/microcontroller-projects/esp32-lora-communication-with-the-things-network
 
 # Lora module hardware configuration
 
@@ -45,9 +47,9 @@ idf.py set-target esp32s2
 
 ## Configure the frequency plan (region)
 
-The region and frequency plan must be configured according to your country and device. Currently, EU868, US915, AU915, AS923, AS923_JP, KR920 and IN866 are supported.
+The region and frequency plan must be configured according to your country and device. We need to select US915.
 
-From the _hello_world_ directory, run:
+From the NYC_pedestian_counter directory, run:
 
 ```
 idf.py menuconfig
@@ -63,11 +65,14 @@ In the [TTN console](https://console.cloud.thethings.network/) go to your applic
 
 ![Register new device](images/register_device.png)
 
-First select the brand, model etc. of your device in the section *Select the end device*.
+First select the brand, model etc. of your device in the section *Enter end device specifics manually*.
 
-Then enter the data in the *Enter regisration data* section. First select the frequency plan of your region.
+Select the following options
 
-The AppEUI (also called JoinEUI), the DevEUI and the AppKey should be provided by the device manufacturer. If so, enter them. If not, kill *Fill with zeros* for the AppEUI and click *Generate* for the DevEUI and AppKey.
+![Screenshot from 2023-07-12 23-16-36](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/2e17768c-d758-4195-81c7-8c1ae4a7358c)
+
+
+The AppEUI (also called JoinEUI), the DevEUI and the AppKey should be provided by the device manufacturer. If so, enter them. If not, kill *Fill with random numbers* for the AppEUI and click *Generate* for the DevEUI and AppKey.
 
 Finally finish by clicking *Register end device*.
 
@@ -75,7 +80,7 @@ The device will be registered and the overiew page will be displayed:
 
 ![Copy device EUI](images/copy_dev_eui.png)
 
-For each of AppEUI, DevEUI and AppKey, copy the hexadecimal value by clicking the copy icon after the value and paste it into `main.cpp` to replace the question marks in the below line:
+For each of AppEUI, DevEUI and AppKey, copy the hexadecimal value by clicking the copy icon after the value and paste it into `config_template.h` to replace the question marks in the below line:
 
 ```cpp
 // AppEUI (sometimes called JoinEUI)
@@ -97,8 +102,9 @@ const char *devEui = "70B3D57ED00434E7";
 const char *appKey = "5FF08D16C310BB05A09A17783C7A43B4";
 ```
 
-*Please copy your own values and not the example values above.*
+Rename the file to `config.h`
 
+*Please copy your own values and not the example values above.*
 
 
 ## Configure the pins
@@ -107,20 +113,19 @@ Go to `main.cpp` and change the pin numbers where needed:
 
 ```cpp
 // Pins and other resources
-#define TTN_SPI_HOST      HSPI_HOST
-#define TTN_SPI_DMA_CHAN  1
-#define TTN_PIN_SPI_SCLK  5
-#define TTN_PIN_SPI_MOSI  27
-#define TTN_PIN_SPI_MISO  19
-#define TTN_PIN_NSS       18
+#define TTN_SPI_HOST      SPI2_HOST
+#define TTN_SPI_DMA_CHAN  SPI_DMA_DISABLED
+#define TTN_PIN_SPI_SCLK  7
+#define TTN_PIN_SPI_MOSI  9
+#define TTN_PIN_SPI_MISO  8
+#define TTN_PIN_NSS       1
 #define TTN_PIN_RXTX      TTN_NOT_CONNECTED
-#define TTN_PIN_RST       14
-#define TTN_PIN_DIO0      26
-#define TTN_PIN_DIO1      33
+#define TTN_PIN_RST       2
+#define TTN_PIN_DIO0      4
+#define TTN_PIN_DIO1      3
 ```
 
 See [Boards and Pins](Boards-and-Pins) for the pin configuration of popular boards.
-
 
 
 ## Build and flash the app
@@ -131,7 +136,7 @@ Connect your device to the USB port and run:
 idf.py -p /dev/cu.usbserial build flash monitor
 ```
 
-Instead of _/dev/cu.usbserial_, insert your serial port (on Windows it will look like _COM3_).
+Instead of _/dev/cu.usbserial_, insert your serial port (on Windows it will look like _COM3_ on Linux it will be /dev/tty**).
 
 The app should be built, uploaded to your device and the app's output should be shown in your terminal window:
 
@@ -194,6 +199,6 @@ Go to the [TTN console](https://console.cloud.thethings.network/), select your *
 
 ![Received messages](images/recv_messages.png)
 
-The payload should read: `48 65 6C 6C 6F 2C 20 77 6F 72 6C 64`, which are the hexadecimal ASCII codes for `Hello, world`.
+The payload should read the pedestrian count.
 
 

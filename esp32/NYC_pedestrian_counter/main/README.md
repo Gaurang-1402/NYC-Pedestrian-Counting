@@ -65,7 +65,8 @@ This should be the final setup in your menu:
 
 In the [TTN console](https://console.cloud.thethings.network/) go to your application (or create one if needed), select the *Devices* tab and click *register device*:
 
-![Register new device](images/register_device.png)
+![image](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/943a7bee-5546-4f57-9e65-03da010b9472)
+
 
 First select the brand, model etc. of your device in the section *Enter end device specifics manually*.
 
@@ -80,7 +81,8 @@ Finally finish by clicking *Register end device*.
 
 The device will be registered and the overiew page will be displayed:
 
-![Copy device EUI](images/copy_dev_eui.png)
+![image](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/5d9fe3a2-bdd3-465f-8dc9-13d91c7317a7)
+
 
 For each of AppEUI, DevEUI and AppKey, copy the hexadecimal value by clicking the copy icon after the value and paste it into `config_template.h` to replace the question marks in the below line:
 
@@ -188,7 +190,8 @@ Message sent.
 
 Go to the [TTN console](https://console.cloud.thethings.network/), select your *region*, click *Applications*, select your application, click *End devices*, select your device and click on the *Live data* tab. After at most 30 seconds, the first message should appear and further messages should arrive about twice a minute:
 
-![Received messages](images/recv_messages.png)
+![image](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/b42e78fa-c36b-4b7c-85c8-5df1df5e9357)
+
 
 The payload should read the pedestrian count.
 

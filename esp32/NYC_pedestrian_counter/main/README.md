@@ -12,8 +12,8 @@ Here is the schematic of XIAO ESP32S3
 ![image](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/4fc59de3-7e9c-491b-b2c7-6e44613497d4)
 
 Here is the schematic of the RFM915W
+![3072-14 (1)](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/311e4f96-4bf4-4c81-a29a-653d9583510b)
 
-![3072-14](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/539105ba-209b-4cc4-aea2-5b7ab067a837)
 
 The "G" in "G0", "G1", "G2" etc stand for "GPIO"
 

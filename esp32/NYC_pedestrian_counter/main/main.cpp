@@ -104,6 +104,12 @@ static QueueHandle_t xQueueLCDFrame = NULL;
         xTaskCreate(sendMessages, "send_messages", 1024 * 4, (void* )0, 3, nullptr);
 
         /* Camera and YOLO */
+    }
+    else
+    {
+        printf("Join failed. Goodbye\n");
+    }
+
         xQueueAIFrame = xQueueCreate(2, sizeof(camera_fb_t *));
         xQueueLCDFrame = xQueueCreate(2, sizeof(camera_fb_t *));
 
@@ -111,11 +117,7 @@ static QueueHandle_t xQueueLCDFrame = NULL;
         register_algo_yolo(xQueueAIFrame, NULL, NULL, xQueueLCDFrame, false);
         register_lcd(xQueueLCDFrame, NULL, true);
 
-    }
-    else
-    {
-        printf("Join failed. Goodbye\n");
-    }
+
 }
 
 }

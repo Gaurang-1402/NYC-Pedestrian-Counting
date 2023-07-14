@@ -14,6 +14,8 @@
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 
+#include <iostream>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -37,8 +39,116 @@ static bool debug_mode = false;
 #define IOU 30
 
 const uint16_t box_color[] = {0x1FE0, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0};
+// Global counter
+int current_id = 0;
+
+
+// TODO come up with a clever way for unique ID
+// Function to generate a new ID
+int get_new_id() {
+    return current_id++;
+}
+
+
+/* ====================================================================== */
+
+// Start by defining a C structure to represent a centroid and a tracked object
+typedef struct Centroid {
+    int x;
+    int y;
+} Centroid;
+
+typedef struct TrackedObject {
+    int id;
+    Centroid centroid;
+    int disappeared;
+} TrackedObject;
+
+
+std::vector<TrackedObject> objects;
+
+void register_object(Centroid centroid) {
+    TrackedObject new_object;
+    new_object.id = get_new_id();
+    new_object.centroid = centroid;
+    new_object.disappeared = 0;
+    objects.push_back(new_object);
+}
+
+void deregister_object(int index) {
+    objects.erase(objects.begin() + index);
+}
+// Maximum distance between an object's old centroid and a new centroid for them
+// to be considered the same object.
+const int max_distance = 50;
+
+
+void update(std::vector<Centroid> new_centroids) {
+    if (new_centroids.empty()) {
+        for (auto& object : objects) {
+            object.disappeared++;
+
+            if (object.disappeared > 10) {
+                deregister_object(object.id);
+            }
+        }
+        return;
+    }
+
+    if (objects.empty()) {
+        for (const auto& centroid : new_centroids) {
+            register_object(centroid);
+        }
+        std::cout << "\033[1;32mRegistered " << new_centroids.size() << " new objects.\033[0m\n";
+        return;
+    }
+
+    std::vector<std::vector<int>> distances(objects.size(), std::vector<int>(new_centroids.size()));
+    for (int i = 0; i < objects.size(); ++i) {
+        for (int j = 0; j < new_centroids.size(); ++j) {
+            distances[i][j] = std::abs(objects[i].centroid.x - new_centroids[j].x) +
+                              std::abs(objects[i].centroid.y - new_centroids[j].y);
+        }
+    }
+
+    for (int i = 0; i < objects.size(); ++i) {
+        int min_distance = max_distance + 1;
+        int closest_j = -1;
+        for (int j = 0; j < new_centroids.size(); ++j) {
+            if (distances[i][j] < min_distance) {
+                min_distance = distances[i][j];
+                closest_j = j;
+            }
+        }
+
+        if (closest_j != -1) {
+            objects[i].centroid = new_centroids[closest_j];
+            objects[i].disappeared = 0;
+            new_centroids[closest_j].x = new_centroids[closest_j].y = -1;
+            std::cout << "\033[1;34mObject " << objects[i].id << " updated with new centroid.\033[0m\n";
+        } else {
+            objects[i].disappeared++;
+            std::cout << "\033[1;31mObject " << objects[i].id << " has disappeared.\033[0m\n";
+        }
+    }
+
+    for (const auto& centroid : new_centroids) {
+        if (centroid.x != -1 && centroid.y != -1) {
+            register_object(centroid);
+            std::cout << "\033[1;33mRegistered new object with centroid.\033[0m\n";
+        }
+    }
+}
+
+
+
+
+/* ====================================================================== */
+
 
 std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point);
+
+
 
 // Globals, used for compatibility with Arduino-style sketches.
 namespace
@@ -132,6 +242,18 @@ static void task_process_handler(void *arg)
                 int16_t num_element = num_class + OBJECT_T_INDEX;
 
                 _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, w, h, records, num_class, scale, zero_point);
+
+
+                std::vector<Centroid> centroids;
+                for (const auto& object : _yolo_list) {
+                    Centroid centroid;
+                    centroid.x = object.x + object.w / 2;
+                    centroid.y = object.y + object.h / 2;
+                    centroids.push_back(centroid);
+
+                }
+
+                update(centroids);
 
                 printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n", (dsp_end_time - dsp_start_time), (end_time - start_time), 0);
                 bool found = false;

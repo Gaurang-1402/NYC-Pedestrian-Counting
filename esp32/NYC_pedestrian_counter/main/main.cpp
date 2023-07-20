@@ -30,11 +30,29 @@ const char *devEui = DEVEUI;
 // AppKey
 const char *appKey = APPKEY;
 
-
 static TheThingsNetwork ttn;
-
-const unsigned TX_INTERVAL = 30;
+const unsigned TX_INTERVAL = 300;
 static uint8_t msgData[] = "Hello, world";
+
+void runCameraYOLO(void* pvParameter)
+{
+    static QueueHandle_t xQueueAIFrame = NULL;
+    static QueueHandle_t xQueueLCDFrame = NULL;
+
+    while(1) { // Added while loop
+        if(xQueueAIFrame == NULL && xQueueLCDFrame == NULL) {
+            xQueueAIFrame = xQueueCreate(2, sizeof(camera_fb_t *));
+            xQueueLCDFrame = xQueueCreate(2, sizeof(camera_fb_t *));
+
+            register_camera(PIXFORMAT_RGB565, FRAMESIZE_240X240, 8, xQueueAIFrame);
+            register_algo_yolo(xQueueAIFrame, NULL, NULL, xQueueLCDFrame, false);
+            // register_lcd(xQueueLCDFrame, NULL, true);
+        }
+        
+        // Process camera and YOLO code here...
+        vTaskDelay(10 / portTICK_PERIOD_MS); // Add a delay to allow other tasks to run
+    }    
+}
 
 
 void sendMessages(void* pvParameter)
@@ -59,10 +77,6 @@ void messageReceived(const uint8_t* message, size_t length, ttn_port_t port)
 extern "C"
 
 { 
-
-static QueueHandle_t xQueueAIFrame = NULL;
-static QueueHandle_t xQueueLCDFrame = NULL;
-
 
     
     void app_main(void) {
@@ -101,22 +115,16 @@ static QueueHandle_t xQueueLCDFrame = NULL;
     if (ttn.join())
     {
         printf("Joined.\n");
-        xTaskCreate(sendMessages, "send_messages", 1024 * 4, (void* )0, 3, nullptr);
+        xTaskCreatePinnedToCore(sendMessages, "send_messages", 1024 * 4, (void* )0, 1, NULL, 0);
 
-        /* Camera and YOLO */
+        // Pin the runCameraYOLO task to core 1
+        // xTaskCreate(runCameraYOLO, "camera_yolo", 1024 * 4, NULL, 3, NULL);
+        xTaskCreatePinnedToCore(runCameraYOLO, "camera_yolo", 1024 * 4, NULL, 4, NULL, 1);        /* Camera and YOLO */
     }
     else
     {
         printf("Join failed. Goodbye\n");
     }
-
-        xQueueAIFrame = xQueueCreate(2, sizeof(camera_fb_t *));
-        xQueueLCDFrame = xQueueCreate(2, sizeof(camera_fb_t *));
-
-        register_camera(PIXFORMAT_RGB565, FRAMESIZE_240X240, 2, xQueueAIFrame);
-        register_algo_yolo(xQueueAIFrame, NULL, NULL, xQueueLCDFrame, false);
-        register_lcd(xQueueLCDFrame, NULL, true);
-
 
 }
 

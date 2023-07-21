@@ -15,6 +15,9 @@
 #include "esp_timer.h"
 
 #include <iostream>
+#include <algorithm>
+using std::min;
+using std::max;
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -50,8 +53,6 @@ int get_new_id() {
 }
 
 
-/* ====================================================================== */
-
 // Start by defining a C structure to represent a centroid and a tracked object
 typedef struct Centroid {
     int x;
@@ -61,16 +62,110 @@ typedef struct Centroid {
 typedef struct TrackedObject {
     int id;
     Centroid centroid;
+    Centroid last_centroid;  // Add this field to store the last position of the object
     int disappeared;
 } TrackedObject;
 
 
 std::vector<TrackedObject> objects;
 
+/* ====================================================================== */
+
+// Start by defining points and lines to represent the counting lines
+
+
+struct Point {
+    int x, y;
+    Point(int _x, int _y) : x(_x), y(_y) {}
+};
+
+struct Line {
+    Point p1, p2;
+    Line(Point _p1, Point _p2) : p1(_p1), p2(_p2) {}
+};
+
+
+// Global pedestrian count for each line
+int pedCountHorizontal = 0;
+int pedCountVertical = 0;
+int pedCountDiagonal = 0;
+
+// Function to find orientation of ordered triplet (p, q, r). 
+// The function returns following values 
+// 0 --> p, q and r are colinear 
+// 1 --> Clockwise 
+// 2 --> Counterclockwise 
+int orientation(Point p, Point q, Point r) 
+{ 
+    int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y); 
+
+    if (val == 0) return 0;  // colinear 
+
+    return (val > 0)? 1: 2; // clock or counterclock wise 
+} 
+
+bool onSegment(Point p, Point q, Point r) 
+{ 
+    if (q.x <= max(p.x, r.x) && q.x >= min(p.x, r.x) &&
+        q.y <= max(p.y, r.y) && q.y >= min(p.y, r.y))
+       return true;
+ 
+    return false; 
+} 
+
+
+// Function that returns true if line segment 'p1q1' and 'p2q2' intersect. 
+bool doIntersect(Point p1, Point q1, Point p2, Point q2) 
+{ 
+    // Find the four orientations needed for general and special cases 
+    int o1 = orientation(p1, q1, p2); 
+    int o2 = orientation(p1, q1, q2); 
+    int o3 = orientation(p2, q2, p1); 
+    int o4 = orientation(p2, q2, q1); 
+
+    // General case 
+    if (o1 != o2 && o3 != o4) 
+        return true; 
+
+    // Special Cases 
+    // p1, q1 and p2 are colinear and p2 lies on segment p1q1 
+    if (o1 == 0 && onSegment(p1, p2, q1)) return true; 
+
+    // p1, q1 and p2 are colinear and q2 lies on segment p1q1 
+    if (o2 == 0 && onSegment(p1, q2, q1)) return true; 
+
+    // p2, q2 and p1 are colinear and p1 lies on segment p2q2 
+    if (o3 == 0 && onSegment(p2, p1, q2)) return true; 
+
+    // p2, q2 and q1 are colinear and q1 lies on segment p2q2 
+    if (o4 == 0 && onSegment(p2, q1, q2)) return true; 
+
+    return false; // Doesn't fall in any of the above cases 
+} 
+
+bool crosses_line(Centroid last_centroid, Centroid centroid, Line line) {
+    // Check if the line segment from last_centroid to centroid crosses the line.
+    // Return true if it does, false otherwise.
+
+   
+    Point p1(last_centroid.x, last_centroid.y);
+    Point q1(centroid.x, centroid.y);
+    
+    return doIntersect(p1, q1, line.p1, line.p2);
+}
+
+/* ====================================================================== */
+
+
+
+/* ====================================================================== */
+
+
 void register_object(Centroid centroid) {
     TrackedObject new_object;
     new_object.id = get_new_id();
     new_object.centroid = centroid;
+    new_object.last_centroid = centroid;
     new_object.disappeared = 0;
     objects.push_back(new_object);
 }
@@ -83,7 +178,7 @@ void deregister_object(int index) {
 const int max_distance = 50;
 
 
-void update(std::vector<Centroid> new_centroids) {
+void update(std::vector<Centroid> new_centroids, Line horizontalLine, Line verticalLine, Line diagonalLine) {
     if (new_centroids.empty()) {
         for (auto& object : objects) {
             object.disappeared++;
@@ -122,8 +217,25 @@ void update(std::vector<Centroid> new_centroids) {
         }
 
         if (closest_j != -1) {
+            // Before updating the current centroid, store its value in last_centroid
+            objects[i].last_centroid = objects[i].centroid;
+
+            // Now you can update the current centroid
             objects[i].centroid = new_centroids[closest_j];
             objects[i].disappeared = 0;
+
+            // Check if the object crossed the lines.
+            if (crosses_line(objects[i].last_centroid, objects[i].centroid, horizontalLine)) {
+                pedCountHorizontal++;
+            }
+            if (crosses_line(objects[i].last_centroid, objects[i].centroid, verticalLine)) {
+                pedCountVertical++;
+            }
+            if (crosses_line(objects[i].last_centroid, objects[i].centroid, diagonalLine)) {
+                pedCountDiagonal++;
+            }
+
+
             new_centroids[closest_j].x = new_centroids[closest_j].y = -1;
             std::cout << "\033[1;34mObject " << objects[i].id << " updated with new centroid.\033[0m\n";
         } else {
@@ -144,6 +256,7 @@ void update(std::vector<Centroid> new_centroids) {
 
 
 /* ====================================================================== */
+
 
 
 std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point);
@@ -182,6 +295,18 @@ static void task_process_handler(void *arg)
     uint16_t h = input->dims->data[1];
     uint16_t w = input->dims->data[2];
     uint16_t c = input->dims->data[3];
+
+    // Initialize lines
+    Line horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
+    Line verticalLine = Line(Point(w / 2, 0), Point(w / 2, h)); // vertical line
+    Line diagonalLine = Line(Point(0, 0), Point(w, h)); // diagonal line
+
+    // Draw horizontal line
+    fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // Red
+    // Draw vertical line
+    fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // Green
+    // Draw diagonal line
+    fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
 
     while (true)
     {
@@ -253,7 +378,13 @@ static void task_process_handler(void *arg)
 
                 }
 
-                update(centroids);
+                // Print pedestrian counts
+                std::cout << "\033[1;33mPedestrian Count for Horizontal Line: " << pedCountHorizontal << "\033[0m\n"; 
+                std::cout << "\033[1;33mPedestrian Count for Vertical Line: " << pedCountVertical << "\033[0m\n";
+                std::cout << "\033[1;33mPedestrian Count for Diagonal Line: " << pedCountDiagonal << "\033[0m\n"; // Yellow
+
+
+                update(centroids, horizontalLine, verticalLine, diagonalLine);
 
                 printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n", (dsp_end_time - dsp_start_time), (end_time - start_time), 0);
                 bool found = false;

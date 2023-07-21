@@ -296,17 +296,12 @@ static void task_process_handler(void *arg)
     uint16_t w = input->dims->data[2];
     uint16_t c = input->dims->data[3];
 
+    printf("Format: {\"height\": %d, \"width\": %d, \"channels\": %d, \"model\": \"yolo\"}\r\n", h, w, c);
+
     // Initialize lines
     Line horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
     Line verticalLine = Line(Point(w / 2, 0), Point(w / 2, h)); // vertical line
     Line diagonalLine = Line(Point(0, 0), Point(w, h)); // diagonal line
-
-    // Draw horizontal line
-    fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // Red
-    // Draw vertical line
-    fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // Green
-    // Draw diagonal line
-    fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
 
     while (true)
     {
@@ -367,6 +362,12 @@ static void task_process_handler(void *arg)
                 int16_t num_element = num_class + OBJECT_T_INDEX;
 
                 _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, w, h, records, num_class, scale, zero_point);
+                
+                fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // Red
+                // Draw vertical line
+                fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // Green
+                // Draw diagonal line
+                fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
 
 
                 std::vector<Centroid> centroids;

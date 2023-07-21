@@ -5,6 +5,10 @@
 #include <string.h>
 #include "TheThingsNetwork.h"
 
+#include "esp_wifi.h"
+#include "esp_system.h"
+
+
 #include "config.h"
 
 /* Camera and YOLO setup */
@@ -34,19 +38,50 @@ const char *appKey = APPKEY;
 static TheThingsNetwork ttn;
 
 const unsigned TX_INTERVAL = 30;
-static uint8_t msgData[] = "Hello, world";
+int newCount = 0;
+
+uint8_t mac[6];
+char boardId[18];  // MAC address will be 17 characters long
+
+esp_wifi_get_mac(WIFI_IF_STA, mac);
+sprintf(boardId, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
 
 void sendMessages(void* pvParameter)
 {
     while (1) {
         printf("Sending message...\n");
-        TTNResponseCode res = ttn.transmitMessage(msgData, sizeof(msgData) - 1);
+
+        /* Initialize JSON object */
+        cJSON *json = cJSON_CreateObject();
+
+        /* We will just use example data, but you should replace these with actual values */
+        char *board_id = "1234";
+        int newCount = 42;
+        time_t now = time(NULL);
+
+        /* Add data to JSON object */
+        cJSON_AddStringToObject(json, "board_id", boardId);
+        cJSON_AddNumberToObject(json, "newCount", newCount);
+        cJSON_AddNumberToObject(json, "timestamp", (double)now);  /* Using a double here since cJSON does not support direct insertion of time_t */
+
+        /* Convert JSON object to string */
+        char *message = cJSON_Print(json);
+
+        /* Note that you might need to convert the JSON string to binary or another suitable format depending on your LoRaWAN library and settings */
+        TTNResponseCode res = ttn.transmitMessage((uint8_t*)message, strlen(message));
+
         printf(res == kTTNSuccessfulTransmission ? "Message sent.\n" : "Transmission failed.\n");
+
+        /* Free JSON object */
+        cJSON_Delete(json);
+        /* Free message */
+        free(message);
 
         vTaskDelay(TX_INTERVAL * pdMS_TO_TICKS(1000));
     }
 }
+
 
 void messageReceived(const uint8_t* message, size_t length, ttn_port_t port)
 {
@@ -58,19 +93,19 @@ void messageReceived(const uint8_t* message, size_t length, ttn_port_t port)
 
 extern "C"
 
-{ 
+{
 
 static QueueHandle_t xQueueAIFrame = NULL;
 static QueueHandle_t xQueueLCDFrame = NULL;
 
 
-    
+
     void app_main(void) {
     esp_err_t err;
     // Initialize the GPIO ISR handler service
     err = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
     ESP_ERROR_CHECK(err);
-    
+
     // Initialize the NVS (non-volatile storage) for saving and restoring the keys
     err = nvs_flash_init();
     ESP_ERROR_CHECK(err);

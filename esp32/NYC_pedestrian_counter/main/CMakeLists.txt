@@ -1,4 +1,4 @@
 idf_component_register(
-    SRCS "main.cpp"
+    SRCS "camera_main.cpp" "main.cpp"
     INCLUDE_DIRS "."
     )

@@ -4,7 +4,6 @@
 #include "nvs_flash.h"
 #include <string.h>
 #include "TheThingsNetwork.h"
-
 #include "esp_wifi.h"
 #include "esp_system.h"
 
@@ -22,10 +21,7 @@
 
 // NOTE:
 // The LoRaWAN frequency and the radio chip must be configured by running 'idf.py menuconfig'.
-// Go to Components / The Things Network, select the appropriate values and save.
-
-// Copy the below hex strings from the TTN console (Applications > Your application > End devices
-// > Your device > Activation information)
+// Please read the wiki on Lora to learn how to do this.
 
 // AppEUI (sometimes called JoinEUI)
 const char *appEui = APPEUI;
@@ -33,7 +29,6 @@ const char *appEui = APPEUI;
 const char *devEui = DEVEUI;
 // AppKey
 const char *appKey = APPKEY;
-
 
 static TheThingsNetwork ttn;
 
@@ -43,44 +38,39 @@ int newCount = 0;
 uint8_t mac[6];
 char boardId[18];  // MAC address will be 17 characters long
 
-esp_wifi_get_mac(WIFI_IF_STA, mac);
-sprintf(boardId, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
-
 void sendMessages(void* pvParameter)
 {
+    esp_wifi_get_mac(WIFI_IF_STA, mac);
+
     while (1) {
         printf("Sending message...\n");
 
-        /* Initialize JSON object */
-        cJSON *json = cJSON_CreateObject();
-
-        /* We will just use example data, but you should replace these with actual values */
-        char *board_id = "1234";
+        /* TODO: this is an example, replace these with actual values */
         int newCount = 42;
-        time_t now = time(NULL);
 
-        /* Add data to JSON object */
-        cJSON_AddStringToObject(json, "board_id", boardId);
-        cJSON_AddNumberToObject(json, "newCount", newCount);
-        cJSON_AddNumberToObject(json, "timestamp", (double)now);  /* Using a double here since cJSON does not support direct insertion of time_t */
+        /* Prepare the payload */
 
-        /* Convert JSON object to string */
-        char *message = cJSON_Print(json);
+        /*
+        In this code, we're sending a payload that is 7 bytes long: the first 6 bytes are the MAC address and the last byte is the count.
+        This is a very compact representation that fits well within the constraints of LoRaWAN.
+        On the receiving side (TTN), we receive a 7-byte array.
+        We need to parse this back into a MAC address and count.
+        Note: This example assumes that that count is in the range 0-255.
+        If it can be larger, we may need to use more bytes to represent it, and adjust the code accordingly.
+        */
+        uint8_t payload[7];
+        memcpy(payload, mac, 6);
+        payload[6] = newCount;
 
-        /* Note that you might need to convert the JSON string to binary or another suitable format depending on your LoRaWAN library and settings */
-        TTNResponseCode res = ttn.transmitMessage((uint8_t*)message, strlen(message));
+        /* Send the payload */
+        TTNResponseCode res = ttn.transmitMessage(payload, sizeof(payload));
 
         printf(res == kTTNSuccessfulTransmission ? "Message sent.\n" : "Transmission failed.\n");
-
-        /* Free JSON object */
-        cJSON_Delete(json);
-        /* Free message */
-        free(message);
 
         vTaskDelay(TX_INTERVAL * pdMS_TO_TICKS(1000));
     }
 }
+
 
 
 void messageReceived(const uint8_t* message, size_t length, ttn_port_t port)
@@ -94,11 +84,6 @@ void messageReceived(const uint8_t* message, size_t length, ttn_port_t port)
 extern "C"
 
 {
-
-static QueueHandle_t xQueueAIFrame = NULL;
-static QueueHandle_t xQueueLCDFrame = NULL;
-
-
 
     void app_main(void) {
     esp_err_t err;
@@ -128,30 +113,21 @@ static QueueHandle_t xQueueLCDFrame = NULL;
     // Register callback for received messages
     ttn.onMessage(messageReceived);
 
-//    ttn.setAdrEnabled(false);
-//    ttn.setDataRate(kTTNDataRate_US915_SF7);
-//    ttn.setMaxTxPower(14);
+    /* TODO: set these parameters according to requirements */
+    //    ttn.setAdrEnabled(false);
+    //    ttn.setDataRate(kTTNDataRate_US915_SF7);
+    //    ttn.setMaxTxPower(14);
 
     printf("Joining...\n");
     if (ttn.join())
     {
         printf("Joined.\n");
         xTaskCreate(sendMessages, "send_messages", 1024 * 4, (void* )0, 3, nullptr);
-
-        /* Camera and YOLO */
     }
     else
     {
         printf("Join failed. Goodbye\n");
     }
-
-        xQueueAIFrame = xQueueCreate(2, sizeof(camera_fb_t *));
-        xQueueLCDFrame = xQueueCreate(2, sizeof(camera_fb_t *));
-
-        register_camera(PIXFORMAT_RGB565, FRAMESIZE_240X240, 2, xQueueAIFrame);
-        register_algo_yolo(xQueueAIFrame, NULL, NULL, xQueueLCDFrame, false);
-        register_lcd(xQueueLCDFrame, NULL, true);
-
 
 }
 

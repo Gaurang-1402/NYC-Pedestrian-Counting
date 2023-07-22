@@ -38,6 +38,59 @@ static bool debug_mode = false;
 
 std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point);
 
+#include "../ttn-esp32/include/TheThingsNetwork.h"
+#include "../../../NYC_pedestrian_counter/main/config.h"
+
+#include "nvs_flash.h"
+
+/* LoRa setup */
+
+// NOTE:
+// The LoRaWAN frequency and the radio chip must be configured by running 'idf.py menuconfig'.
+// Go to Components / The Things Network, select the appropriate values and save.
+
+// Copy the below hex strings from the TTN console (Applications > Your application > End devices
+// > Your device > Activation information)
+
+// AppEUI (sometimes called JoinEUI)
+const char *appEui = APPEUI;
+// DevEUI
+const char *devEui = DEVEUI;
+// AppKey
+const char *appKey = APPKEY;
+
+static TheThingsNetwork ttn;
+const unsigned TX_INTERVAL = 20;
+static uint8_t msgData[] = "Hello, world";
+
+void sendMessage(void *pvParameter)
+{
+    printf("Sending message...\n");
+    TTNResponseCode res = ttn.transmitMessage(msgData, sizeof(msgData) - 1);
+    printf(res == kTTNSuccessfulTransmission ? "Message sent.\n" : "Transmission failed.\n");
+
+    // vTaskDelay(TX_INTERVAL * pdMS_TO_TICKS(1000));
+}
+
+void messageReceived(const uint8_t *message, size_t length, ttn_port_t port)
+{
+    printf("Message of %d bytes received on port %d:", length, port);
+    for (int i = 0; i < length; i++)
+        printf(" %02x", message[i]);
+    printf("\n");
+}
+
+uint32_t ticks_now(void)
+{
+    TickType_t currentTick = xTaskGetTickCount();
+    return pdTICKS_TO_MS(currentTick);
+}
+
+void print_time(void)
+{
+    uint32_t currentTime = ticks_now();
+    printf("Current time in milliseconds: %u\n", currentTime);
+}
 // Globals, used for compatibility with Arduino-style sketches.
 namespace
 {
@@ -70,11 +123,19 @@ static void task_process_handler(void *arg)
     uint16_t h = input->dims->data[1];
     uint16_t w = input->dims->data[2];
     uint16_t c = input->dims->data[3];
+    int init_time = (int)(esp_timer_get_time() / 1000);
 
     while (true)
     {
+
         if (gEvent)
         {
+            if ((int)(esp_timer_get_time() / 1000) - init_time > 20000)
+            {
+                print_time();
+                sendMessage(NULL);
+                init_time = (int)(esp_timer_get_time() / 1000);
+            }
             if (xQueueReceive(xQueueFrameI, &frame, portMAX_DELAY))
             {
 
@@ -127,50 +188,33 @@ static void task_process_handler(void *arg)
 
                 uint32_t records = output->dims->data[1];
                 uint32_t num_class = output->dims->data[2] - OBJECT_T_INDEX;
-                int16_t num_element = num_class + OBJECT_T_INDEX;
+                // int16_t num_element = num_class + OBJECT_T_INDEX;
 
-                _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, frame->width, frame->height, records, num_class, scale, zero_point);
+                _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, w, h, records, num_class, scale, zero_point);
 
                 printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n", (dsp_end_time - dsp_start_time), (end_time - start_time), 0);
                 bool found = false;
 
-#if 0
-    for (int i = 0; i < records; i++)
-    {
-        float confidence = float(output->data.int8[i * num_element + OBJECT_C_INDEX] - zero_point) * scale;
-        if (confidence > .40)
-        {
-            int8_t max = -128;
-            int target = 0;
-            for (int j = 0; j < num_class; j++)
-            {
-                if (max < output->data.int8[i * num_element + OBJECT_T_INDEX + j])
-                {
-                    max = output->data.int8[i * num_element + OBJECT_T_INDEX + j];
-                    target = j;
-                }
-            }
-            int x = int(float(float(output->data.int8[i * num_element + OBJECT_X_INDEX] - zero_point) * scale) * frame->width);
-            int y = int(float(float(output->data.int8[i * num_element + OBJECT_Y_INDEX] - zero_point) * scale) * frame->height);
-            int w = int(float(float(output->data.int8[i * num_element + OBJECT_W_INDEX] - zero_point) * scale) * frame->width);
-            int h = int(float(float(output->data.int8[i * num_element + OBJECT_H_INDEX] - zero_point) * scale) * frame->height);
-
-            printf("index: %d target: %d max: %d confidence: %d box{x: %d, y: %d, w: %d, h: %d}\n", i, target, max, int((float)confidence * 100), x, y, w, h);
-        }
-    }
-#endif
-
                 if (std::distance(_yolo_list.begin(), _yolo_list.end()) > 0)
                 {
+                    int index = 0;
                     found = true;
                     printf("    Objects found: %d\n", std::distance(_yolo_list.begin(), _yolo_list.end()));
                     printf("    Objects:\n");
                     printf("    [\n");
                     for (auto &yolo : _yolo_list)
                     {
-                        fb_gfx_drawRect(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h/2, yolo.w, yolo.h, 0x1FE0);
-                        fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h/2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
-                        printf("        {\"class\": \"%s\", \"x\": %d, \"y\": %d, \"w\": %d, \"h\": %d, \"confidence\": %d},\n", g_yolo_model_classes[yolo.target], yolo.x, yolo.y, yolo.w, yolo.h, yolo.confidence);
+                        yolo.x = uint16_t(float(yolo.x) / float(w) * float(frame->width));
+                        yolo.y = uint16_t(float(yolo.y) / float(h) * float(frame->height));
+                        yolo.w = uint16_t(float(yolo.w) / float(w) * float(frame->width));
+                        yolo.h = uint16_t(float(yolo.h) / float(h) * float(frame->height));
+                        // fb_gfx_drawRect2(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2, yolo.w, yolo.h, box_color[index % (sizeof(box_color) / sizeof(box_color[0]))], 4);
+                        // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h/2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
+                        printf("        {\"class\": \"%d\", \"x\": %d, \"y\": %d, \"w\": %d, \"h\": %d, \"confidence\": %d},\n", yolo.target, yolo.x, yolo.y, yolo.w, yolo.h, yolo.confidence);
+                        index++;
+                        // fb_gfx_drawRect(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h/2, yolo.w, yolo.h, 0x1FE0);
+                        // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h/2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
+                        // printf("        {\"class\": \"%s\", \"x\": %d, \"y\": %d, \"w\": %d, \"h\": %d, \"confidence\": %d},\n", g_yolo_model_classes[yolo.target], yolo.x, yolo.y, yolo.w, yolo.h, yolo.confidence);
                     }
                     printf("    ]\n");
                 }
@@ -187,23 +231,37 @@ static void task_process_handler(void *arg)
 
             if (xQueueFrameO)
             {
+                // continue;
+                // printf("Sending frame0\n");
                 xQueueSend(xQueueFrameO, &frame, portMAX_DELAY);
+                // printf("Sent frame0\n");
             }
             else if (gReturnFB)
             {
+                // printf("Returning frame1\n");
                 esp_camera_fb_return(frame);
             }
             else
             {
+                // printf("Freeing frame2\n");
                 free(frame);
+                // printf("Freed frame2\n");
             }
 
             if (xQueueResult)
             {
+                // printf("Sending result3\n");
                 xQueueSend(xQueueResult, NULL, portMAX_DELAY);
             }
         }
+        else
+        {
+            printf("no event\n");
+        }
+        // print_time();
+        // vTaskDelay(100 / portTICK_PERIOD_MS);
     }
+    printf("we should never get here\n");
 }
 
 static void task_event_handler(void *arg)
@@ -226,6 +284,38 @@ int register_algo_yolo(const QueueHandle_t frame_i,
     xQueueResult = result;
     gReturnFB = camera_fb_return;
 
+    // Communication
+
+    esp_err_t err;
+    // Initialize the GPIO ISR handler service
+    err = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    ESP_ERROR_CHECK(err);
+
+    // Initialize the NVS (non-volatile storage) for saving and restoring the keys
+    err = nvs_flash_init();
+    ESP_ERROR_CHECK(err);
+
+    // Initialize SPI bus
+    spi_bus_config_t spi_bus_config;
+    memset(&spi_bus_config, 0, sizeof(spi_bus_config));
+    spi_bus_config.miso_io_num = TTN_PIN_SPI_MISO;
+    spi_bus_config.mosi_io_num = TTN_PIN_SPI_MOSI;
+    spi_bus_config.sclk_io_num = TTN_PIN_SPI_SCLK;
+    err = spi_bus_initialize(TTN_SPI_HOST, &spi_bus_config, TTN_SPI_DMA_CHAN);
+    ESP_ERROR_CHECK(err);
+
+    // Configure the SX127x pins
+    ttn.configurePins(TTN_SPI_HOST, TTN_PIN_NSS, TTN_PIN_RXTX, TTN_PIN_RST, TTN_PIN_DIO0, TTN_PIN_DIO1);
+
+    // The below line can be commented after the first run as the data is saved in NVS
+    ttn.provision(devEui, appEui, appKey);
+
+    // Register callback for received messages
+    ttn.onMessage(messageReceived);
+    //    ttn.setAdrEnabled(false);
+    //    ttn.setDataRate(kTTNDataRate_US915_SF7);
+    //    ttn.setMaxTxPower(14);
+
     // get model (.tflite) from flash
     model = tflite::GetModel(g_yolo_model_data);
     if (model->version() != TFLITE_SCHEMA_VERSION)
@@ -246,21 +336,40 @@ int register_algo_yolo(const QueueHandle_t frame_i,
         return -1;
     }
 
-    static tflite::MicroMutableOpResolver<14> micro_op_resolver;
+    static tflite::MicroMutableOpResolver<18> micro_op_resolver;
     micro_op_resolver.AddConv2D();
+    micro_op_resolver.AddDepthwiseConv2D();
     micro_op_resolver.AddReshape();
     micro_op_resolver.AddPad();
+    micro_op_resolver.AddPadV2();
     micro_op_resolver.AddAdd();
     micro_op_resolver.AddSub();
     micro_op_resolver.AddRelu();
+    micro_op_resolver.AddMean();
     micro_op_resolver.AddMaxPool2D();
     micro_op_resolver.AddConcatenation();
     micro_op_resolver.AddQuantize();
     micro_op_resolver.AddTranspose();
     micro_op_resolver.AddLogistic();
     micro_op_resolver.AddMul();
+    micro_op_resolver.AddSplitV();
     micro_op_resolver.AddStridedSlice();
     micro_op_resolver.AddResizeNearestNeighbor();
+    // static tflite::MicroMutableOpResolver<14> micro_op_resolver;
+    // micro_op_resolver.AddConv2D();
+    // micro_op_resolver.AddReshape();
+    // micro_op_resolver.AddPad();
+    // micro_op_resolver.AddAdd();
+    // micro_op_resolver.AddSub();
+    // micro_op_resolver.AddRelu();
+    // micro_op_resolver.AddMaxPool2D();
+    // micro_op_resolver.AddConcatenation();
+    // micro_op_resolver.AddQuantize();
+    // micro_op_resolver.AddTranspose();
+    // micro_op_resolver.AddLogistic();
+    // micro_op_resolver.AddMul();
+    // micro_op_resolver.AddStridedSlice();
+    // micro_op_resolver.AddResizeNearestNeighbor();
 
     // Build an interpreter to run the model with.
     // NOLINTNEXTLINE(runtime-global-variables)
@@ -279,9 +388,23 @@ int register_algo_yolo(const QueueHandle_t frame_i,
     // Get information about the memory area to use for the model's input.
     input = interpreter->input(0);
 
-    xTaskCreatePinnedToCore(task_process_handler, TAG, 4 * 1024, NULL, 5, NULL, 0);
-    if (xQueueEvent)
-        xTaskCreatePinnedToCore(task_event_handler, TAG, 4 * 1024, NULL, 5, NULL, 1);
+    if (ttn.join())
+    {
+        printf("Joined.\n");
+        xTaskCreatePinnedToCore(task_process_handler, TAG, 4 * 1024, NULL, 5, NULL, 0);
+        if (xQueueEvent)
+            xTaskCreatePinnedToCore(task_event_handler, TAG, 4 * 1024, NULL, 5, NULL, 1);
+        return 0;
+    }
+    else
+    {
+        printf("Join failed. Goodbye\n");
+        return 0;
+    }
+
+    // xTaskCreatePinnedToCore(task_process_handler, TAG, 4 * 1024, NULL, 5, NULL, 0);
+    // if (xQueueEvent)
+    //     xTaskCreatePinnedToCore(task_event_handler, TAG, 4 * 1024, NULL, 5, NULL, 1);
 
     return 0;
 }
@@ -300,7 +423,7 @@ static bool _object_nms_comparator(yolo_t &oa, yolo_t &ob)
 
 static bool _object_comparator(yolo_t &oa, yolo_t &ob)
 {
-    return oa.x < ob.x;
+    return oa.x > ob.x;
 }
 
 bool _object_remove(yolo_t &obj)
@@ -322,7 +445,7 @@ static uint16_t _overlap(float x1, float w1, float x2, float w2)
 void _soft_nms_obeject_detection(std::forward_list<yolo_t> &yolo_obj_list, uint8_t nms)
 {
     std::forward_list<yolo_t>::iterator max_box_obj;
-    yolo_obj_list.sort(_object_comparator);
+    yolo_obj_list.sort(_object_nms_comparator);
     for (std::forward_list<yolo_t>::iterator it = yolo_obj_list.begin(); it != yolo_obj_list.end(); ++it)
     {
         uint16_t area = it->w * it->h;
@@ -388,13 +511,15 @@ void _hard_nms_obeject_count(std::forward_list<yolo_t> &yolo_obj_list, uint8_t n
 
 std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point)
 {
+    bool rescale = scale < 0.1 ? true : false;
     std::forward_list<yolo_t> yolo_obj_list[num_class];
     int16_t num_obj[num_class] = {0};
     int16_t num_element = num_class + OBJECT_T_INDEX;
     for (int i = 0; i < num_record; i++)
     {
         float confidence = float(dataset[i * num_element + OBJECT_C_INDEX] - zero_point) * scale;
-        if (int(float(confidence) * 100) >= threshold)
+        confidence = rescale ? confidence * 100 : confidence;
+        if (int(float(confidence)) >= threshold)
         {
             yolo_t obj;
             int8_t max = -128;
@@ -409,17 +534,28 @@ std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, 
                 }
             }
 
-            
-            int x = int(float(float(dataset[i * num_element + OBJECT_X_INDEX] - zero_point) * scale) * width);
-            int y = int(float(float(dataset[i * num_element + OBJECT_Y_INDEX] - zero_point) * scale) * height);
-            int w = int(float(float(dataset[i * num_element + OBJECT_W_INDEX] - zero_point) * scale) * width);
-            int h = int(float(float(dataset[i * num_element + OBJECT_H_INDEX] - zero_point) * scale) * height);
+            float x = float(dataset[i * num_element + OBJECT_X_INDEX] - zero_point) * scale;
+            float y = float(dataset[i * num_element + OBJECT_Y_INDEX] - zero_point) * scale;
+            float w = float(dataset[i * num_element + OBJECT_W_INDEX] - zero_point) * scale;
+            float h = float(dataset[i * num_element + OBJECT_H_INDEX] - zero_point) * scale;
 
-            obj.x = CLIP(x, 0, width);
-            obj.y = CLIP(y, 0, height);
-            obj.w = CLIP(w, 0, width);
-            obj.h = CLIP(h, 0, height);
-            obj.confidence = int(float(confidence) * 100);
+            if (rescale)
+            {
+                obj.x = CLIP(int(x * width), 0, width);
+                obj.y = CLIP(int(y * height), 0, height);
+                obj.w = CLIP(int(w * width), 0, width);
+                obj.h = CLIP(int(h * height), 0, height);
+            }
+            else
+            {
+                obj.x = CLIP(int(x), 0, width);
+                obj.y = CLIP(int(y), 0, height);
+                obj.w = CLIP(int(w), 0, width);
+                obj.h = CLIP(int(h), 0, height);
+            }
+            obj.w = (obj.x + obj.w) > width ? (width - obj.x) : obj.w;
+            obj.h = (obj.y + obj.h) > height ? (height - obj.y) : obj.h;
+            obj.confidence = confidence;
             if (num_obj[obj.target] >= top_n)
             {
                 yolo_obj_list[obj.target].sort(_object_comparator_reverse);

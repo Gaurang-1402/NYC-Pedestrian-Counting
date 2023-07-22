@@ -21,15 +21,21 @@ implementation files for use in yolo.cpp
 using namespace std;
 
 struct bboxCoords {
-	int x1, y1, x2, y2;
+	uint16_t x1, y1, x2, y2;
 };
 
-struct objectAttrs {
-	pair<float, float> objectCenter; // defined as x, y
-	int objectID;
-	int timeVanished;
-	bboxCoords bboxCoords;
-};
+typedef struct
+{
+	uint16_t x;
+	uint16_t y;
+	uint16_t w;
+	uint16_t h;
+	uint8_t timeVanished;
+	uint8_t objectID;
+	pair<uint16_t, uint16_t> objectCenter;
+	uint8_t confidence;
+	uint8_t target;
+} yolo_t;
 
 
 class centroidTracker {
@@ -38,7 +44,11 @@ public:
 	maxDistanceChange(maxDistance), nextIDToAssign(0) {}
 	
 
-	void updateObjects(const vector<objectAttrs>& inputObjects) {
+	unordered_map<int, yolo_t> updateObjects(vector<yolo_t>& inputObjects) {
+		/*takes list of all yolo objects and then 
+		updates their IDS and returns the new 
+		updated list to the caller.*/
+
 		// seeing if input empty
 		if (!inputObjects.size()) {			
 			for (auto& entry : previousObjectPositions) {
@@ -51,18 +61,16 @@ public:
 		}
 
 		// finding the centroids
-		vector<pair<float, float>> inputObjectsCentroids;
-		vector<bboxCoords> inputBboxs;
-		for (const objectAttrs& inputObject : inputObjects) {
-			pair<float, float> pair = findCentroid(inputObject.bboxCoords);
-			inputObjectsCentroids.push_back(pair);
-			inputBboxs.push_back(inputObject.bboxCoords);
+		for (yolo_t& inputObject : inputObjects) {
+			
+			inputObject.objectCenter = findCentroid(inputObject.x, inputObject.y, 
+				inputObject.w, inputObject.h);
 		}
 
 		// if not tracking anything enter new objs
 		if (previousObjectPositions.empty()) {
-			for (size_t i = 0; i < inputObjects.size(); ++i) {
-				registerObject(inputObjectsCentroids[i], inputBboxs[i]);
+			for (const yolo_t& inputObject : inputObjects) {
+				registerObject(inputObject);
 			}
 		}
 		else {
@@ -73,8 +81,7 @@ public:
 				prevObjectCentroids.push_back(entry.second.objectCenter);
 			}
 
-			vector<vector<int>> distanceMatrix = calcDistanceMatrix(prevObjectCentroids,
-				inputObjectsCentroids);
+			vector<vector<int>> distanceMatrix = calcDistanceMatrix(prevObjectCentroids, inputObjects);
 
 			vector<pair<size_t, size_t>> sortedElems = calcSorted(distanceMatrix);
 
@@ -101,9 +108,12 @@ public:
 				}
 				
 				int objID = prevObjectIDs[location.first];
-				objectAttrs& obj = previousObjectPositions[objID];
+				yolo_t& obj = previousObjectPositions[objID];
 				obj.timeVanished = 0;
-				obj.bboxCoords = inputBboxs[location.second];
+				obj.x = inputObjectsCentroids[location.second];
+				obj.y
+					obj.w
+					obj.h
 				obj.objectCenter = inputObjectsCentroids[location.second];
 
 				usedRows.insert(location.first);
@@ -125,7 +135,7 @@ public:
 			if (distanceMatrix.size() >= distanceMatrix[0].size()) {
 				for (const int& row : unusedRows) {
 					int objID = prevObjectIDs[row];
-					objectAttrs& obj = previousObjectPositions[objID];
+					yolo_t& obj = previousObjectPositions[objID];
 					int timeVanished = ++obj.timeVanished;
 
 
@@ -136,12 +146,29 @@ public:
 			}
 			else {
 				for (const int& col : unusedCols) {
-					registerObject(inputObjectsCentroids[col], inputBboxs[col]);
+					registerObject(inputObjects[col]);
 				}
 
 			}
 		}
 
+		return previousObjectPositions;
+	}
+
+private:
+	
+	void deregisterObject(int objectID) {
+		previousObjectPositions.erase(objectID);
+	}
+
+	void registerObject(const yolo_t& inputObject) {
+		// assigns the new object an ID 
+		// currently this code assigns the new object in the 
+		// previous position and updates teh ID, this porbably isnt neccesaey
+		// to update the ID.
+		previousObjectPositions[nextIDToAssign] = inputObject;
+		previousObjectPositions[nextIDToAssign].objectID = nextIDToAssign;
+		nextIDToAssign++;
 	}
 
 	vector<vector<int>> calcDistanceMatrix(vector<pair<float, float>> currObjectCentroids,
@@ -187,35 +214,20 @@ public:
 		return sortedElems;
 	}
 
-	pair<float, float> findCentroid(const bboxCoords& objectBbox) {
-		// Finds centroid up to 2 decimal places
-		float centroidX = (objectBbox.x1 + objectBbox.x2) / 2;
-		float centroidY = (objectBbox.y1 + objectBbox.y2) / 2;
-		centroidX = round(centroidX * 100) / 100;
-		centroidY = round(centroidY * 100) / 100;
+	pair<uint16_t, uint16_t> findCentroid(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+		// Finds centroid of an object returns a pair
+		// the calculation is based off line 177 of yolo.cpp 
+		// the coordinates passed to teh bounding box from yolo_t
+		// this calculation could be wrong if the yolo.cpp coordinates
+		// arent what what they should be
+		uint16_t x2 = (x - w) / 2;
+		uint16_t y2 = (y - h) / 2;
+		uint16_t centroidX = uint16_t((w + x2) / 2);
+		uint16_t centroidY = uint16_t((h + y2) / 2);
 		return make_pair(centroidX, centroidY);
 	}
 
-	void registerObject(const pair<float, float>& centroid, const bboxCoords& inputBboxCoord) {
-
-		previousObjectPositions[nextIDToAssign] = objectAttrs{
-		centroid, nextIDToAssign, 0, inputBboxCoord};
-
-		nextIDToAssign++;
-	}
-
-	void deregisterObject(int objectID) {
-		previousObjectPositions.erase(objectID);
-	}
-
-	const unordered_map<int, objectAttrs>& getPreviousPositions() {
-		return previousObjectPositions;
-	}
-
-private:
-	
-
-	unordered_map<int, objectAttrs> previousObjectPositions; // ID , object
+	unordered_map<int, yolo_t> previousObjectPositions; // ID , object
 	int nextIDToAssign; //the next available ID that hasn't been assigned yet
 	const int maxFramesVanished; // in frames
 	const int maxDistanceChange; // in pixels

@@ -49,7 +49,19 @@ static bool debug_mode = false;
 #define IOU 30
 
 uint8_t mac[6];
-char boardId[18]; // MAC address will be 17 characters long
+char chipId[13];
+
+/*
+we use the esp_efuse_mac_get_default() function which gives us the base MAC address
+(in the form of a 6-byte array) that is unique to each ESP32 chip.
+This can be used as a unique identifier for your ESP32.
+*/
+void get_chip_id(char *chipId)
+{
+    uint8_t baseMac[6];
+    esp_efuse_mac_get_default(baseMac);
+    sprintf(chipId, "%02X%02X%02X%02X%02X%02X", baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
+}
 
 const uint16_t box_color[] = {0x1FE0, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0};
 // Global counter
@@ -320,7 +332,10 @@ void sendMessage(void *pvParameter)
     If it can be larger, we may need to use more bytes to represent it, and adjust the code accordingly.
     */
     uint8_t payload[7];
-    memcpy(payload, mac, 6);
+    for (int i = 0; i < 6; i++)
+    {
+        payload[i] = chipId[i];
+    }
     printf("Pedestrian Count Max: %d\n", max(max(pedCountHorizontal, pedCountVertical), pedCountDiagonal));
     payload[6] = max(max(pedCountHorizontal, pedCountVertical), pedCountDiagonal);
 
@@ -328,6 +343,12 @@ void sendMessage(void *pvParameter)
     TTNResponseCode res = ttn.transmitMessage(payload, sizeof(payload));
 
     printf(res == kTTNSuccessfulTransmission ? "Message sent.\n" : "Transmission failed.\n");
+    if (res == kTTNSuccessfulTransmission)
+    {
+        pedCountHorizontal = 0;
+        pedCountVertical = 0;
+        pedCountDiagonal = 0;
+    }
     // vTaskDelay(TX_INTERVAL * pdMS_TO_TICKS(1000));
 }
 
@@ -595,8 +616,9 @@ int register_algo_yolo(const QueueHandle_t frame_i,
     //    ttn.setAdrEnabled(false);
     //    ttn.setDataRate(kTTNDataRate_US915_SF7);
     //    ttn.setMaxTxPower(14);
-    esp_wifi_get_mac(WIFI_IF_STA, mac);
-    printf("MAC address: %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    // esp_wifi_deinit();
+    // esp_wifi_get_mac(WIFI_IF_STA, mac);
+    get_chip_id(chipId);
 
     // get model (.tflite) from flash
     model = tflite::GetModel(g_yolo_model_data);
@@ -673,6 +695,7 @@ int register_algo_yolo(const QueueHandle_t frame_i,
     if (ttn.join())
     {
         printf("Joined.\n");
+        printf("Chip ID is %s\n", chipId);
         xTaskCreatePinnedToCore(task_process_handler, TAG, 4 * 1024, NULL, 5, NULL, 0);
         if (xQueueEvent)
             xTaskCreatePinnedToCore(task_event_handler, TAG, 4 * 1024, NULL, 5, NULL, 1);

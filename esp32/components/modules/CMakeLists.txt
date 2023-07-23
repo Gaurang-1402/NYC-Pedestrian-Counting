@@ -20,6 +20,8 @@ set(requires    esp32-camera
                 fb_gfx
                 tflite-lib
                 esp_timer
+                nvs_flash
+                
                 )
 
 idf_component_register(SRC_DIRS ${src_dirs} INCLUDE_DIRS ${include_dirs} REQUIRES ${requires})

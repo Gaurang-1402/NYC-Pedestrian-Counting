@@ -27,6 +27,13 @@ using std::min;
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 
+#include "../ttn-esp32/include/TheThingsNetwork.h"
+#include "../../../NYC_pedestrian_counter/main/config.h"
+
+#include "nvs_flash.h"
+#include "esp_wifi.h"
+#include "esp_system.h"
+
 static const char *TAG = "yolo";
 
 static QueueHandle_t xQueueFrameI = NULL;
@@ -40,6 +47,9 @@ static bool debug_mode = false;
 
 #define CONFIDENCE 40
 #define IOU 30
+
+uint8_t mac[6];
+char boardId[18]; // MAC address will be 17 characters long
 
 const uint16_t box_color[] = {0x1FE0, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0};
 // Global counter
@@ -276,11 +286,6 @@ void update(std::vector<Centroid> new_centroids, Line horizontalLine, Line verti
 
 std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point);
 
-#include "../ttn-esp32/include/TheThingsNetwork.h"
-#include "../../../NYC_pedestrian_counter/main/config.h"
-
-#include "nvs_flash.h"
-
 /* LoRa setup */
 
 // NOTE:
@@ -304,9 +309,25 @@ static uint8_t msgData[] = "Hello, world";
 void sendMessage(void *pvParameter)
 {
     printf("Sending message...\n");
-    TTNResponseCode res = ttn.transmitMessage(msgData, sizeof(msgData) - 1);
-    printf(res == kTTNSuccessfulTransmission ? "Message sent.\n" : "Transmission failed.\n");
+    /* Prepare the payload */
 
+    /*
+    In this code, we're sending a payload that is 7 bytes long: the first 6 bytes are the MAC address and the last byte is the count.
+    This is a very compact representation that fits well within the constraints of LoRaWAN.
+    On the receiving side (TTN), we receive a 7-byte array.
+    We need to parse this back into a MAC address and count.
+    Note: This example assumes that that count is in the range 0-255.
+    If it can be larger, we may need to use more bytes to represent it, and adjust the code accordingly.
+    */
+    uint8_t payload[7];
+    memcpy(payload, mac, 6);
+    printf("Pedestrian Count Max: %d\n", max(max(pedCountHorizontal, pedCountVertical), pedCountDiagonal));
+    payload[6] = max(max(pedCountHorizontal, pedCountVertical), pedCountDiagonal);
+
+    /* Send the payload */
+    TTNResponseCode res = ttn.transmitMessage(payload, sizeof(payload));
+
+    printf(res == kTTNSuccessfulTransmission ? "Message sent.\n" : "Transmission failed.\n");
     // vTaskDelay(TX_INTERVAL * pdMS_TO_TICKS(1000));
 }
 
@@ -574,6 +595,8 @@ int register_algo_yolo(const QueueHandle_t frame_i,
     //    ttn.setAdrEnabled(false);
     //    ttn.setDataRate(kTTNDataRate_US915_SF7);
     //    ttn.setMaxTxPower(14);
+    esp_wifi_get_mac(WIFI_IF_STA, mac);
+    printf("MAC address: %02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
     // get model (.tflite) from flash
     model = tflite::GetModel(g_yolo_model_data);

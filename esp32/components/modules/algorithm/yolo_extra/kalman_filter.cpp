@@ -5,8 +5,8 @@
 #include <map>
 #include <algorithm>
 #include <numeric>
-#include <Eigen/Dense>
-#include <Eigen/Cholesky>
+#include <eigen-3.4.0/Eigen/Dense>
+#include <eigen-3.4.0/Eigen/Cholesky>
 
 /*
 Table for the 0.95 quantile of the chi-square distribution with N degrees of

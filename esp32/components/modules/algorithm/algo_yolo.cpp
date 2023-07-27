@@ -3,7 +3,6 @@
 #include <forward_list>
 
 #include "algo_yolo.hpp"
-// #include <yolo_extra/kalman_filter.hpp>
 #include "yolo_model_data.h"
 
 #include "fb_gfx.h"
@@ -27,13 +26,14 @@ using std::max;
 #include "tensorflow/lite/micro/micro_log.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
-
 #include <vector>
 
+#include "dsp_platform.h"
+#include "esp_dsp.h"
+#include "ekf.h"
 
 // TODO fix imports
-// #include "Hungarian.h"
-// #include "KalmanFilter.h"
+#include "Hungarian.h"
 
 
 static const char *TAG = "yolo";
@@ -54,25 +54,143 @@ const uint16_t box_color[] = {0x1FE0, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0};
 
 
 /* ================================= SORT TRACKER ==================================== */
+// TODO remove after you figure out kalman filter
+class KalmanFilter {
+public:
+    std::vector<double> state;
+    std::vector<std::vector<double>> covariance;
+
+    KalmanFilter() {
+        // Initialization of the state and covariance goes here
+    }
+
+    void initialize(std::vector<double>& initialState) {
+        state = initialState;
+        // More initialization code might go here
+    }
+
+    std::vector<double> predict() {
+        // Prediction code goes here. For now, just return the current state
+        return state;
+    }
+
+    std::vector<double> update(std::vector<double>& measurement) {
+        // Update code goes here. For now, just set the state to the measurement and return it
+        state = measurement;
+        return state;
+    }
+};
+
+
+/*
+
+his refactoring assumes you use the Process method for prediction and the Update method for updating the filter state based on the measurements. The usage of the ekf's Update method may be different depending on your specific implementation. The H matrix, measurement, expected values, and R noise values would need to be appropriately set in your code before calling the update method.
+
+The new TrackedObject class is initialized with the dimensions of the state and the noise vectors and the initial state. The predict method now also takes a control input u and the time step dt as parameters, which are required by the ekf's Process method. The update method takes the same parameters as the ekf's Update method.
+
+Additionally, please remember to deal with memory management appropriately as you are using raw pointers for the measurements, expected values, and noise in your ekf's Update method.
+
+*/
 
 // class TrackedObject {
 // public:
-//     KalmanFilter kf;  // The Kalman filter that will track this object
-//     std::vector<double> state;  // The state of the object
+//     ekf filter;  // The extended Kalman filter that will track this object
+//     dspm::Mat state;  // The state of the object
 
-//     TrackedObject(std::vector<double> initialState) : state(initialState) {
-//         kf = KalmanFilter();  // Initialize a new Kalman filter for this object
-//         kf.initialize(state);  // Initialize the Kalman filter with the first state
+//     TrackedObject(int state_dim, int noise_dim, dspm::Mat initialState) : state(initialState), filter(state_dim, noise_dim) {
+//         filter.X = state;  // Initialize the state of the filter
 //     }
 
-//     void predict() {
-//         state = kf.predict();  // Predict the next state using the Kalman filter
+//     void predict(float *u, float dt) {
+//         filter.Process(u, dt);  // Predict the next state using the EKF
+//         state = filter.X; // Update object state
 //     }
 
-//     void update(std::vector<double> measurement) {
-//         state = kf.update(measurement);  // Update the state based on the new measurement
+//     void update(dspm::Mat &H, float *measurement, float *expected, float *R) {
+//         filter.Update(H, measurement, expected, R);  // Update the state based on the new measurement
+//         state = filter.X; // Update object state
 //     }
 // };
+
+
+
+class TrackedObject {
+public:
+    KalmanFilter kf;  // The Kalman filter that will track this object
+    std::vector<double> state;  // The state of the object
+
+    TrackedObject(std::vector<double> initialState) : state(initialState) {
+        kf = KalmanFilter();  // Initialize a new Kalman filter for this object
+        kf.initialize(state);  // Initialize the Kalman filter with the first state
+    }
+
+    void predict() {
+        state = kf.predict();  // Predict the next state using the Kalman filter
+    }
+
+    void update(std::vector<double> measurement) {
+        state = kf.update(measurement);  // Update the state based on the new measurement
+    }
+};
+
+std::vector<std::vector<double>> getMeasurements(std::forward_list<yolo_t> yolo_list) {
+    std::vector<std::vector<double>> measurements;
+    for (const auto& yolo : yolo_list) {
+        std::vector<double> measurement;
+        measurement.push_back(static_cast<double>(yolo.x));
+        measurement.push_back(static_cast<double>(yolo.y));
+        measurement.push_back(static_cast<double>(yolo.w));
+        measurement.push_back(static_cast<double>(yolo.h));
+        measurements.push_back(measurement);
+    }
+    return measurements;
+}
+
+double calculateDistanceEucledian(std::vector<double>& state, std::vector<double>& measurement) {
+    double dx = state[0] - measurement[0];
+    double dy = state[1] - measurement[1];
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+double calculateDistanceIoU(std::vector<double>& state, std::vector<double>& measurement) {
+    // Calculate overlap
+    double x_overlap = std::max(0.0, std::min(state[0] + state[2]/2, measurement[0] + measurement[2]/2) - std::max(state[0] - state[2]/2, measurement[0] - measurement[2]/2));
+    double y_overlap = std::max(0.0, std::min(state[1] + state[3]/2, measurement[1] + measurement[3]/2) - std::max(state[1] - state[3]/2, measurement[1] - measurement[3]/2));
+    double intersection = x_overlap * y_overlap;
+
+    // Calculate union
+    double stateArea = state[2] * state[3];
+    double measurementArea = measurement[2] * measurement[3];
+    double union_ = stateArea + measurementArea - intersection;
+
+    // Calculate IoU
+    double IoU = intersection / union_;
+
+    // In this case, a higher overlap means a smaller "distance".
+    // So we return the inverse of the IoU. You might need to adjust this to fit your needs.
+    return 1 - IoU;
+}
+
+
+
+std::vector<std::vector<double>> computeCostMatrix(std::vector<TrackedObject>& objects, std::vector<std::vector<double>>& measurements) {
+    std::vector<std::vector<double>> costMatrix(objects.size(), std::vector<double>(measurements.size()));
+
+    for (int i = 0; i < objects.size(); i++) {
+        for (int j = 0; j < measurements.size(); j++) {
+            costMatrix[i][j] = calculateDistanceEucledian(objects[i].state, measurements[j]);  // calculateDistance is a function you need to implement
+        }
+    }
+
+    // for (int i = 0; i < objects.size(); i++) {
+    //     for (int j = 0; j < measurements.size(); j++) {
+    //         costMatrix[i][j] = calculateDistanceIoU(objects[i].state, measurements[j]);  // calculateDistance is a function you need to implement
+    //     }
+    // }
+
+    return costMatrix;
+}
+
 
 // // Global counter
 // int current_id = 0;
@@ -85,21 +203,8 @@ const uint16_t box_color[] = {0x1FE0, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0};
 // }
 
 
-// // Start by defining a C structure to represent a centroid and a tracked object
-// typedef struct Centroid {
-//     int x;
-//     int y;
-// } Centroid;
-
-// typedef struct TrackedObject {
-//     int id;
-//     Centroid centroid;
-//     Centroid last_centroid;  // Add this field to store the last position of the object
-//     int disappeared;
-// } TrackedObject;
 
 
-// std::vector<TrackedObject> objects;
 
 /* ================================ LINE CROSSING METHOD ====================================== */
 
@@ -401,8 +506,7 @@ static void task_process_handler(void *arg)
                 _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, w, h, records, num_class, scale, zero_point);
 
                 // TODO we need to get measurements from the YOLO list
-                // std::vector<std::vector<double>> measurements = getMeasurements();
-
+                std::vector<std::vector<double>> measurements = getMeasurements(_yolo_list);
 
                 fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // Red
                 // Draw vertical line

@@ -2,6 +2,9 @@
 #include "app_lcd.h"
 #include "app_camera.h"
 #include "algo_yolo.hpp"
+#include "dsp_platform.h"
+#include "esp_dsp.h"
+#include "ekf.h"
 
 static QueueHandle_t xQueueAIFrame = NULL;
 static QueueHandle_t xQueueLCDFrame = NULL;

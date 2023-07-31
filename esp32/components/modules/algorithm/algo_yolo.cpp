@@ -90,67 +90,67 @@ int pedCountHorizontal = 0;
 int pedCountVertical = 0;
 int pedCountDiagonal = 0;
 
-// Function to find orientation of ordered triplet (p, q, r). 
-// The function returns following values 
-// 0 --> p, q and r are colinear 
-// 1 --> Clockwise 
-// 2 --> Counterclockwise 
-int orientation(Point p, Point q, Point r) 
-{ 
-    int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y); 
+// Function to find orientation of ordered triplet (p, q, r).
+// The function returns following values
+// 0 --> p, q and r are colinear
+// 1 --> Clockwise
+// 2 --> Counterclockwise
+int orientation(Point p, Point q, Point r)
+{
+    int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
 
-    if (val == 0) return 0;  // colinear 
+    if (val == 0) return 0;  // colinear
 
-    return (val > 0)? 1: 2; // clock or counterclock wise 
-} 
+    return (val > 0)? 1: 2; // clock or counterclock wise
+}
 
-bool onSegment(Point p, Point q, Point r) 
-{ 
+bool onSegment(Point p, Point q, Point r)
+{
     if (q.x <= max(p.x, r.x) && q.x >= min(p.x, r.x) &&
         q.y <= max(p.y, r.y) && q.y >= min(p.y, r.y))
        return true;
- 
-    return false; 
-} 
+
+    return false;
+}
 
 
-// Function that returns true if line segment 'p1q1' and 'p2q2' intersect. 
-bool doIntersect(Point p1, Point q1, Point p2, Point q2) 
-{ 
-    // Find the four orientations needed for general and special cases 
-    int o1 = orientation(p1, q1, p2); 
-    int o2 = orientation(p1, q1, q2); 
-    int o3 = orientation(p2, q2, p1); 
-    int o4 = orientation(p2, q2, q1); 
+// Function that returns true if line segment 'p1q1' and 'p2q2' intersect.
+bool doIntersect(Point p1, Point q1, Point p2, Point q2)
+{
+    // Find the four orientations needed for general and special cases
+    int o1 = orientation(p1, q1, p2);
+    int o2 = orientation(p1, q1, q2);
+    int o3 = orientation(p2, q2, p1);
+    int o4 = orientation(p2, q2, q1);
 
-    // General case 
-    if (o1 != o2 && o3 != o4) 
-        return true; 
+    // General case
+    if (o1 != o2 && o3 != o4)
+        return true;
 
-    // Special Cases 
-    // p1, q1 and p2 are colinear and p2 lies on segment p1q1 
-    if (o1 == 0 && onSegment(p1, p2, q1)) return true; 
+    // Special Cases
+    // p1, q1 and p2 are colinear and p2 lies on segment p1q1
+    if (o1 == 0 && onSegment(p1, p2, q1)) return true;
 
-    // p1, q1 and p2 are colinear and q2 lies on segment p1q1 
-    if (o2 == 0 && onSegment(p1, q2, q1)) return true; 
+    // p1, q1 and p2 are colinear and q2 lies on segment p1q1
+    if (o2 == 0 && onSegment(p1, q2, q1)) return true;
 
-    // p2, q2 and p1 are colinear and p1 lies on segment p2q2 
-    if (o3 == 0 && onSegment(p2, p1, q2)) return true; 
+    // p2, q2 and p1 are colinear and p1 lies on segment p2q2
+    if (o3 == 0 && onSegment(p2, p1, q2)) return true;
 
-    // p2, q2 and q1 are colinear and q1 lies on segment p2q2 
-    if (o4 == 0 && onSegment(p2, q1, q2)) return true; 
+    // p2, q2 and q1 are colinear and q1 lies on segment p2q2
+    if (o4 == 0 && onSegment(p2, q1, q2)) return true;
 
-    return false; // Doesn't fall in any of the above cases 
-} 
+    return false; // Doesn't fall in any of the above cases
+}
 
 bool crosses_line(Centroid last_centroid, Centroid centroid, Line line) {
     // Check if the line segment from last_centroid to centroid crosses the line.
     // Return true if it does, false otherwise.
 
-   
+
     Point p1(last_centroid.x, last_centroid.y);
     Point q1(centroid.x, centroid.y);
-    
+
     return doIntersect(p1, q1, line.p1, line.p2);
 }
 
@@ -362,10 +362,10 @@ static void task_process_handler(void *arg)
                 int16_t num_element = num_class + OBJECT_T_INDEX;
 
                 _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, w, h, records, num_class, scale, zero_point);
-                
-                fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // Red
+
+                fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, 240, 0xFF0000); // black
                 // Draw vertical line
-                fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // Green
+                fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, 240, 0x00FF00); // yellow
                 // Draw diagonal line
                 fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
 
@@ -380,7 +380,7 @@ static void task_process_handler(void *arg)
                 }
 
                 // Print pedestrian counts
-                std::cout << "\033[1;33mPedestrian Count for Horizontal Line: " << pedCountHorizontal << "\033[0m\n"; 
+                std::cout << "\033[1;33mPedestrian Count for Horizontal Line: " << pedCountHorizontal << "\033[0m\n";
                 std::cout << "\033[1;33mPedestrian Count for Vertical Line: " << pedCountVertical << "\033[0m\n";
                 std::cout << "\033[1;33mPedestrian Count for Diagonal Line: " << pedCountDiagonal << "\033[0m\n"; // Yellow
 

@@ -16,8 +16,8 @@
 
 #include <iostream>
 #include <algorithm>
-using std::min;
 using std::max;
+using std::min;
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -35,7 +35,6 @@ using std::max;
 // TODO fix imports
 #include "Hungarian.h"
 
-
 static const char *TAG = "yolo";
 
 static QueueHandle_t xQueueFrameI = NULL;
@@ -52,35 +51,38 @@ static bool debug_mode = false;
 
 const uint16_t box_color[] = {0x1FE0, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0};
 
-
 /* ================================= SORT TRACKER ==================================== */
 // TODO remove after you figure out kalman filter
-class KalmanFilter {
+class KalmanFilter
+{
 public:
     std::vector<double> state;
     std::vector<std::vector<double>> covariance;
 
-    KalmanFilter() {
+    KalmanFilter()
+    {
         // Initialization of the state and covariance goes here
     }
 
-    void initialize(std::vector<double>& initialState) {
+    void initialize(std::vector<double> &initialState)
+    {
         state = initialState;
         // More initialization code might go here
     }
 
-    std::vector<double> predict() {
+    std::vector<double> predict()
+    {
         // Prediction code goes here. For now, just return the current state
         return state;
     }
 
-    std::vector<double> update(std::vector<double>& measurement) {
+    std::vector<double> update(std::vector<double> &measurement)
+    {
         // Update code goes here. For now, just set the state to the measurement and return it
         state = measurement;
         return state;
     }
 };
-
 
 /*
 
@@ -112,30 +114,34 @@ Additionally, please remember to deal with memory management appropriately as yo
 //     }
 // };
 
-
-
-class TrackedObject {
+class TrackedObject
+{
 public:
-    KalmanFilter kf;  // The Kalman filter that will track this object
-    std::vector<double> state;  // The state of the object
+    KalmanFilter kf;           // The Kalman filter that will track this object
+    std::vector<double> state; // The state of the object
 
-    TrackedObject(std::vector<double> initialState) : state(initialState) {
+    TrackedObject(std::vector<double> initialState) : state(initialState)
+    {
         kf = KalmanFilter();  // Initialize a new Kalman filter for this object
-        kf.initialize(state);  // Initialize the Kalman filter with the first state
+        kf.initialize(state); // Initialize the Kalman filter with the first state
     }
 
-    void predict() {
-        state = kf.predict();  // Predict the next state using the Kalman filter
+    void predict()
+    {
+        state = kf.predict(); // Predict the next state using the Kalman filter
     }
 
-    void update(std::vector<double> measurement) {
-        state = kf.update(measurement);  // Update the state based on the new measurement
+    void update(std::vector<double> measurement)
+    {
+        state = kf.update(measurement); // Update the state based on the new measurement
     }
 };
 
-std::vector<std::vector<double>> getMeasurements(std::forward_list<yolo_t> yolo_list) {
+std::vector<std::vector<double>> getMeasurements(std::forward_list<yolo_t> yolo_list)
+{
     std::vector<std::vector<double>> measurements;
-    for (const auto& yolo : yolo_list) {
+    for (const auto &yolo : yolo_list)
+    {
         std::vector<double> measurement;
         measurement.push_back(static_cast<double>(yolo.x));
         measurement.push_back(static_cast<double>(yolo.y));
@@ -146,16 +152,18 @@ std::vector<std::vector<double>> getMeasurements(std::forward_list<yolo_t> yolo_
     return measurements;
 }
 
-double calculateDistanceEucledian(std::vector<double>& state, std::vector<double>& measurement) {
+double calculateDistanceEucledian(std::vector<double> &state, std::vector<double> &measurement)
+{
     double dx = state[0] - measurement[0];
     double dy = state[1] - measurement[1];
     return std::sqrt(dx * dx + dy * dy);
 }
 
-double calculateDistanceIoU(std::vector<double>& state, std::vector<double>& measurement) {
+double calculateDistanceIoU(std::vector<double> &state, std::vector<double> &measurement)
+{
     // Calculate overlap
-    double x_overlap = std::max(0.0, std::min(state[0] + state[2]/2, measurement[0] + measurement[2]/2) - std::max(state[0] - state[2]/2, measurement[0] - measurement[2]/2));
-    double y_overlap = std::max(0.0, std::min(state[1] + state[3]/2, measurement[1] + measurement[3]/2) - std::max(state[1] - state[3]/2, measurement[1] - measurement[3]/2));
+    double x_overlap = std::max(0.0, std::min(state[0] + state[2] / 2, measurement[0] + measurement[2] / 2) - std::max(state[0] - state[2] / 2, measurement[0] - measurement[2] / 2));
+    double y_overlap = std::max(0.0, std::min(state[1] + state[3] / 2, measurement[1] + measurement[3] / 2) - std::max(state[1] - state[3] / 2, measurement[1] - measurement[3] / 2));
     double intersection = x_overlap * y_overlap;
 
     // Calculate union
@@ -171,14 +179,15 @@ double calculateDistanceIoU(std::vector<double>& state, std::vector<double>& mea
     return 1 - IoU;
 }
 
-
-
-std::vector<std::vector<double>> computeCostMatrix(std::vector<TrackedObject>& objects, std::vector<std::vector<double>>& measurements) {
+std::vector<std::vector<double>> computeCostMatrix(std::vector<TrackedObject> &objects, std::vector<std::vector<double>> &measurements)
+{
     std::vector<std::vector<double>> costMatrix(objects.size(), std::vector<double>(measurements.size()));
 
-    for (int i = 0; i < objects.size(); i++) {
-        for (int j = 0; j < measurements.size(); j++) {
-            costMatrix[i][j] = calculateDistanceEucledian(objects[i].state, measurements[j]);  // calculateDistance is a function you need to implement
+    for (int i = 0; i < objects.size(); i++)
+    {
+        for (int j = 0; j < measurements.size(); j++)
+        {
+            costMatrix[i][j] = calculateDistanceEucledian(objects[i].state, measurements[j]); // calculateDistance is a function you need to implement
         }
     }
 
@@ -191,10 +200,8 @@ std::vector<std::vector<double>> computeCostMatrix(std::vector<TrackedObject>& o
     return costMatrix;
 }
 
-
 // // Global counter
 // int current_id = 0;
-
 
 // // TODO come up with a clever way for unique ID
 // // Function to generate a new ID
@@ -202,25 +209,21 @@ std::vector<std::vector<double>> computeCostMatrix(std::vector<TrackedObject>& o
 //     return current_id++;
 // }
 
-
-
-
-
 /* ================================ LINE CROSSING METHOD ====================================== */
 
 // Start by defining points and lines to represent the counting lines
 
-
-struct Point {
+struct Point
+{
     int x, y;
     Point(int _x, int _y) : x(_x), y(_y) {}
 };
 
-struct Line {
+struct Line
+{
     Point p1, p2;
     Line(Point _p1, Point _p2) : p1(_p1), p2(_p2) {}
 };
-
 
 // Global pedestrian count for each line
 int pedCountHorizontal = 0;
@@ -236,20 +239,20 @@ int orientation(Point p, Point q, Point r)
 {
     int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
 
-    if (val == 0) return 0;  // colinear
+    if (val == 0)
+        return 0; // colinear
 
-    return (val > 0)? 1: 2; // clock or counterclock wise
+    return (val > 0) ? 1 : 2; // clock or counterclock wise
 }
 
 bool onSegment(Point p, Point q, Point r)
 {
     if (q.x <= max(p.x, r.x) && q.x >= min(p.x, r.x) &&
         q.y <= max(p.y, r.y) && q.y >= min(p.y, r.y))
-       return true;
+        return true;
 
     return false;
 }
-
 
 // Function that returns true if line segment 'p1q1' and 'p2q2' intersect.
 bool doIntersect(Point p1, Point q1, Point p2, Point q2)
@@ -266,16 +269,20 @@ bool doIntersect(Point p1, Point q1, Point p2, Point q2)
 
     // Special Cases
     // p1, q1 and p2 are colinear and p2 lies on segment p1q1
-    if (o1 == 0 && onSegment(p1, p2, q1)) return true;
+    if (o1 == 0 && onSegment(p1, p2, q1))
+        return true;
 
     // p1, q1 and p2 are colinear and q2 lies on segment p1q1
-    if (o2 == 0 && onSegment(p1, q2, q1)) return true;
+    if (o2 == 0 && onSegment(p1, q2, q1))
+        return true;
 
     // p2, q2 and p1 are colinear and p1 lies on segment p2q2
-    if (o3 == 0 && onSegment(p2, p1, q2)) return true;
+    if (o3 == 0 && onSegment(p2, p1, q2))
+        return true;
 
     // p2, q2 and q1 are colinear and q1 lies on segment p2q2
-    if (o4 == 0 && onSegment(p2, q1, q2)) return true;
+    if (o4 == 0 && onSegment(p2, q1, q2))
+        return true;
 
     return false; // Doesn't fall in any of the above cases
 }
@@ -283,7 +290,6 @@ bool doIntersect(Point p1, Point q1, Point p2, Point q2)
 // bool crosses_line(Centroid last_centroid, Centroid centroid, Line line) {
 //     // Check if the line segment from last_centroid to centroid crosses the line.
 //     // Return true if it does, false otherwise.
-
 
 //     Point p1(last_centroid.x, last_centroid.y);
 //     Point q1(centroid.x, centroid.y);
@@ -293,10 +299,7 @@ bool doIntersect(Point p1, Point q1, Point p2, Point q2)
 
 /* ====================================================================== */
 
-
-
 /* ============================== CENTROID TRACKER ======================================== */
-
 
 // void register_object(Centroid centroid) {
 //     TrackedObject new_object;
@@ -313,7 +316,6 @@ bool doIntersect(Point p1, Point q1, Point p2, Point q2)
 // // Maximum distance between an object's old centroid and a new centroid for them
 // // to be considered the same object.
 // const int max_distance = 50;
-
 
 // void update(std::vector<Centroid> new_centroids, Line horizontalLine, Line verticalLine, Line diagonalLine) {
 //     if (new_centroids.empty()) {
@@ -372,7 +374,6 @@ bool doIntersect(Point p1, Point q1, Point p2, Point q2)
 //                 pedCountDiagonal++;
 //             }
 
-
 //             new_centroids[closest_j].x = new_centroids[closest_j].y = -1;
 //             std::cout << "\033[1;34mObject " << objects[i].id << " updated with new centroid.\033[0m\n";
 //         } else {
@@ -389,16 +390,9 @@ bool doIntersect(Point p1, Point q1, Point p2, Point q2)
 //     }
 // }
 
-
-
-
 /* ====================================================================== */
 
-
-
 std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point);
-
-
 
 // Globals, used for compatibility with Arduino-style sketches.
 namespace
@@ -437,8 +431,8 @@ static void task_process_handler(void *arg)
 
     // Initialize lines
     Line horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
-    Line verticalLine = Line(Point(w / 2, 0), Point(w / 2, h)); // vertical line
-    Line diagonalLine = Line(Point(0, 0), Point(w, h)); // diagonal line
+    Line verticalLine = Line(Point(w / 2, 0), Point(w / 2, h));   // vertical line
+    Line diagonalLine = Line(Point(0, 0), Point(w, h));           // diagonal line
 
     // Initialize tracked objects
     // std::vector<TrackedObject> trackedObjects;
@@ -449,7 +443,6 @@ static void task_process_handler(void *arg)
         {
             if (xQueueReceive(xQueueFrameI, &frame, portMAX_DELAY))
             {
-
 
                 int dsp_start_time = esp_timer_get_time() / 1000;
                 _yolo_list.clear();
@@ -514,12 +507,10 @@ static void task_process_handler(void *arg)
                 // Draw diagonal line
                 fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
 
-
                 // Kalman filter predictions
                 // for (auto& object : trackedObjects) {
                 //     object.predict();
                 // }
-
 
                 // Compute the cost matrix for the Hungarian algorithm
                 // std::vector<std::vector<double>> costMatrix = computeCostMatrix(trackedObjects, measurements);
@@ -550,7 +541,6 @@ static void task_process_handler(void *arg)
                 std::cout << "\033[1;33mPedestrian Count for Horizontal Line: " << pedCountHorizontal << "\033[0m\n";
                 std::cout << "\033[1;33mPedestrian Count for Vertical Line: " << pedCountVertical << "\033[0m\n";
                 std::cout << "\033[1;33mPedestrian Count for Diagonal Line: " << pedCountDiagonal << "\033[0m\n"; // Yellow
-
 
                 printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n", (dsp_end_time - dsp_start_time), (end_time - start_time), 0);
                 bool found = false;

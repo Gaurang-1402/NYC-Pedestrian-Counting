@@ -1,3 +1,4 @@
+
 set(srcs            "modules/common/misc/dsps_pwroftwo.cpp"
                     "modules/common/misc/aes3_tie_log.c"
                     "modules/dotprod/float/dsps_dotprod_f32_ae32.S"
@@ -150,6 +151,7 @@ set(include_dirs                "modules/dotprod/include"
                                 "modules/common/include"
 # EKF files
                                 "modules/kalman/ekf/include"
+                                "modules/kalman/ekf_cv8states/include"
                                 "modules/kalman/ekf_imu13states/include"
 )
 

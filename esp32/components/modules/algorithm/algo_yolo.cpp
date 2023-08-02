@@ -32,8 +32,9 @@ using std::min;
 #include "esp_dsp.h"
 #include "ekf.h"
 
+#include <sort.hpp>
+
 // TODO fix imports
-#include "Hungarian.h"
 
 static const char *TAG = "yolo";
 
@@ -179,26 +180,26 @@ double calculateDistanceIoU(std::vector<double> &state, std::vector<double> &mea
     return 1 - IoU;
 }
 
-std::vector<std::vector<double>> computeCostMatrix(std::vector<TrackedObject> &objects, std::vector<std::vector<double>> &measurements)
-{
-    std::vector<std::vector<double>> costMatrix(objects.size(), std::vector<double>(measurements.size()));
+// std::vector<std::vector<double>> computeCostMatrix(std::vector<TrackedObject> &objects, std::vector<std::vector<double>> &measurements)
+// {
+//     std::vector<std::vector<double>> costMatrix(objects.size(), std::vector<double>(measurements.size()));
 
-    for (int i = 0; i < objects.size(); i++)
-    {
-        for (int j = 0; j < measurements.size(); j++)
-        {
-            costMatrix[i][j] = calculateDistanceEucledian(objects[i].state, measurements[j]); // calculateDistance is a function you need to implement
-        }
-    }
+//     for (int i = 0; i < objects.size(); i++)
+//     {
+//         for (int j = 0; j < measurements.size(); j++)
+//         {
+//             costMatrix[i][j] = calculateDistanceEucledian(objects[i].state, measurements[j]); // calculateDistance is a function you need to implement
+//         }
+//     }
 
-    // for (int i = 0; i < objects.size(); i++) {
-    //     for (int j = 0; j < measurements.size(); j++) {
-    //         costMatrix[i][j] = calculateDistanceIoU(objects[i].state, measurements[j]);  // calculateDistance is a function you need to implement
-    //     }
-    // }
+//     // for (int i = 0; i < objects.size(); i++) {
+//     //     for (int j = 0; j < measurements.size(); j++) {
+//     //         costMatrix[i][j] = calculateDistanceIoU(objects[i].state, measurements[j]);  // calculateDistance is a function you need to implement
+//     //     }
+//     // }
 
-    return costMatrix;
-}
+//     return costMatrix;
+// }
 
 // // Global counter
 // int current_id = 0;
@@ -437,6 +438,9 @@ static void task_process_handler(void *arg)
     // Initialize tracked objects
     // std::vector<TrackedObject> trackedObjects;
 
+    // SORT class (counting)
+    Sort sort;
+
     while (true)
     {
         if (gEvent)
@@ -506,6 +510,27 @@ static void task_process_handler(void *arg)
                 fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // Green
                 // Draw diagonal line
                 fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
+
+                // Update SORT
+
+                measurements = sort.update(measurements);
+
+                // Draw SORT
+
+                for (auto &object : sort.trackedObjects)
+                {
+                    // Draw bounding box
+                    fb_gfx_drawFastHLine(frame, object.boundingBox.p1.x, object.boundingBox.p1.y, object.boundingBox.p2.x - object.boundingBox.p1.x, 0xFFFFFF); // White
+                    fb_gfx_drawFastHLine(frame, object.boundingBox.p1.x, object.boundingBox.p2.y, object.boundingBox.p2.x - object.boundingBox.p1.x, 0xFFFFFF); // White
+                    fb_gfx_drawFastVLine(frame, object.boundingBox.p1.x, object.boundingBox.p1.y, object.boundingBox.p2.y - object.boundingBox.p1.y, 0xFFFFFF); // White
+                    fb_gfx_drawFastVLine(frame, object.boundingBox.p2.x, object.boundingBox.p1.y, object.boundingBox.p2.y - object.boundingBox.p1.y, 0xFFFFFF); // White
+
+                    // Draw center point
+                    fb_gfx_drawPixel(frame, object.center.x, object.center.y, 0xFFFFFF); // White
+
+                    // Draw velocity vector
+                    fb_gfx_drawLine(frame, object.center.x, object.center.y, object.center.x + object.velocity.x, object.center.y + object.velocity.y, 0xFFFFFF); // White
+                }
 
                 // Kalman filter predictions
                 // for (auto& object : trackedObjects) {

@@ -108,6 +108,7 @@ public:
             }
       }
 
+      virtual dspm::Mat StateXDot(dspm::Mat &x, float *u);
       // dspm::Mat StateXdot(dspm::Mat &x, float *u)
       // {
 
@@ -160,7 +161,7 @@ public:
             vector<double> tmp_x(4);
             for (int i = 0; i < 4; ++i)
             {
-                  tmp_x[i] = X(0, i);
+                  tmp_x[i] = X(1, i);
             }
             history.push_back(convert_x_to_bbox(tmp_x));
             return history.back();
@@ -171,7 +172,7 @@ public:
             vector<double> tmp_x(4);
             for (int i = 0; i < 4; ++i)
             {
-                  tmp_x[i] = X(0, i);
+                  tmp_x[i] = X(1, i);
             }
 
             return convert_x_to_bbox(tmp_x);

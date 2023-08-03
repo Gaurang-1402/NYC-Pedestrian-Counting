@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #ifndef _ekf_h_
 #define _ekf_h_
 
@@ -26,75 +25,73 @@
  * The ekf is a base class for Extended Kalman Filter.
  * It contains main matrix operations and define the processing flow.
  */
-class ekf {
+class ekf
+{
 public:
-
     /**
      * Constructor of EKF.
      * THe constructor allocate main memory for the matrixes.
      * @param[in] x: - amount of states in EKF. x[n] = F*x[n-1] + G*u + W. Size of matrix F
      * @param[in] w: - amount of control measurements and noise inputs. Size of matrix G
-    */
+     */
     ekf(int x, int w);
-    
-    
+
     /**
      * Distructor of EKF
-    */
+     */
     virtual ~ekf();
     /**
      * Main processing method of the EKF.
-     * 
+     *
      * @param[in] u: - input measurements
      * @param[in] dt: - time difference from the last call in seconds
-    */
+     */
     virtual void Process(float *u, float dt);
-
 
     /**
      * Initialization of EKF.
      * The method should be called befare the first use of the filter.
-    */
+     */
     virtual void Init() = 0;
     /**
      * x[n] = F*x[n-1] + G*u + W
      * Number of states, X is the state vector (size of F matrix)
-    */
-    int NUMX; 
+     */
+    int NUMX;
     /**
      * x[n] = F*x[n-1] + G*u + W
      * The size of G matrix
-    */
-    int NUMW; 
+     */
+    int NUMW;
 
     /**
      * System state vector
-    */
+     */
     dspm::Mat &X;
 
     /**
      * Linearized system matrices F, where x[n] = F*x[n-1] + G*u + W
-    */
+     */
     dspm::Mat &F;
     /**
      * Linearized system matrices G, where x[n] = F*x[n-1] + G*u + W
-    */
+     */
     dspm::Mat &G;
 
     /**
-    * Covariance matrix and state vector
-    */
+     * Covariance matrix and state vector
+     */
     dspm::Mat &P;
 
     /**
      * Input noise and measurement noise variances
-    */
+     */
     dspm::Mat &Q;
 
     /**
      * Runge-Kutta state update method.
-	 * The method calculates derivatives of input vector x and control measurements u
-     * 
+     * The method calculates derivatives of input vector x and control measurements u
+     *
      * @param[in] x: state vector
      * @param[in] u: control measurement
      * @param[in] dt: time interval from last update in seconds
@@ -124,7 +121,7 @@ public:
 
     /**
      * Calculates covariance prediction matrux P.
-	 * Update matrix P
+     * Update matrix P
      * @param[in] dt: time interval from last update
      */
     virtual void CovariancePrediction(float dt);
@@ -132,7 +129,7 @@ public:
     /**
      * Update of current state by measured values.
      * Optimized method for non correlated values
-	 * Calculate Kalman gain and update matrix P and vector X. 
+     * Calculate Kalman gain and update matrix P and vector X.
      * @param[in] H: derivative matrix
      * @param[in] measured: array of measured values
      * @param[in] expected: array of expected values
@@ -152,14 +149,30 @@ public:
 
     /**
      * Matrix for intermidieve calculations
-    */
+     */
     float *HP;
     /**
      * Matrix for intermidieve calculations
-    */
+     */
     float *Km;
 
 public:
+    ekf &operator=(const ekf &x)
+    {
+        if (this == &x)
+            return *this;
+
+        NUMX = x.NUMX;
+        NUMW = x.NUMW;
+        X = x.X;
+        F = x.F;
+        G = x.G;
+        P = x.P;
+        Q = x.Q;
+        HP = x.HP;
+        Km = x.Km;
+        return *this;
+    }
     // Additional universal helper methods
     /**
      * Convert quaternion to rotation matrix.
@@ -248,7 +261,6 @@ public:
      *      - right quaternion-product matrix 4x4
      */
     static dspm::Mat qProduct(float *q);
-
 };
 
 #endif // _ekf_h_

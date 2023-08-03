@@ -5,24 +5,35 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <unordered_set>
 #include "hungarian.hpp"
 
 using namespace std;
 
-double iou(vector<double> bb_test, vector<double> bb_gt)
+double iou(const vector<double> &bb_test, const vector<double> &bb_gt)
 {
+      double bb_test_width = bb_test[2] - bb_test[0];
+      double bb_test_height = bb_test[3] - bb_test[1];
+      double bb_gt_width = bb_gt[2] - bb_gt[0];
+      double bb_gt_height = bb_gt[3] - bb_gt[1];
+
       double xx1 = max(bb_test[0], bb_gt[0]);
       double yy1 = max(bb_test[1], bb_gt[1]);
       double xx2 = min(bb_test[2], bb_gt[2]);
       double yy2 = min(bb_test[3], bb_gt[3]);
-      double w = max(0.0, xx2 - xx1);
-      double h = max(0.0, yy2 - yy1);
+
+      double w = max(0.0, abs(xx2 - xx1));
+      double h = max(0.0, abs(yy2 - yy1));
       double wh = w * h;
-      double o = wh / ((bb_test[2] - bb_test[0]) * (bb_test[3] - bb_test[1]) + (bb_gt[2] - bb_gt[0]) * (bb_gt[3] - bb_gt[1]) - wh);
-      return o;
+
+      double union_area = ((bb_test_width * bb_test_height) + (bb_gt_width * bb_gt_height) - wh);
+
+      printf("iou: %f\n", wh / union_area);
+
+      return (union_area > 0.0) ? wh / union_area : 0.0;
 }
 
-vector<double> convert_bbox_to_z(vector<double> bbox)
+vector<double> convert_bbox_to_z(const vector<double> &bbox)
 {
       double w = bbox[2] - bbox[0];
       double h = bbox[3] - bbox[1];
@@ -30,39 +41,46 @@ vector<double> convert_bbox_to_z(vector<double> bbox)
       double y = bbox[1] + h / 2.0;
       double s = w * h;
       double r = w / h;
-      return vector<double>{x, y, s, r};
+      return {x, y, s, r}; // Use emplace_back directly to construct the vector
 }
 
-vector<double> convert_x_to_bbox(vector<double> x, double score = numeric_limits<double>::quiet_NaN())
+vector<double> convert_x_to_bbox(const vector<double> &x, double score = numeric_limits<double>::quiet_NaN())
 {
-      double w = sqrt(x[2] * x[3]);
-      double h = x[2] / w;
-      if (isnan(score))
-      {
-            return vector<double>{x[0] - w / 2.0, x[1] - h / 2.0, x[0] + w / 2.0, x[1] + h / 2.0};
-      }
-      else
-      {
-            return vector<double>{x[0] - w / 2.0, x[1] - h / 2.0, x[0] + w / 2.0, x[1] + h / 2.0, score};
-      }
-}
+      double wh = sqrt(x[2] * x[3]);
+      double half_w = wh / 2.0;
+      double half_h = x[2] / (2.0 * half_w);
 
-// A simple implementation of the Hungarian algorithm is needed here.
-// Let's assume it's implemented in a function called HungarianAlgorithm.
+      vector<double> bbox;
+      bbox.reserve(4); // Reserve memory for the result vector (4 elements)
+
+      bbox.push_back(x[0] - half_w);
+      bbox.push_back(x[1] - half_h);
+      bbox.push_back(x[0] + half_w);
+      bbox.push_back(x[1] + half_h);
+
+      if (!isnan(score))
+      {
+            bbox.push_back(score);
+      }
+
+      return bbox;
+}
 
 pair<vector<vector<int>>, pair<vector<int>, vector<int>>>
-associate_detections_to_trackers(vector<vector<double>> detections, vector<vector<double>> trackers, double iou_threshold = 0.3)
+associate_detections_to_trackers(const vector<vector<double>> &detections, const vector<vector<double>> &trackers, double iou_threshold = 0.3)
 {
       if (trackers.empty())
       {
             return {vector<vector<int>>{}, {vector<int>(detections.size()), {}}};
       }
 
-      vector<vector<double>> iou_matrix(detections.size(), vector<double>(trackers.size()));
+      const size_t num_detections = detections.size();
+      const size_t num_trackers = trackers.size();
+      vector<vector<double>> iou_matrix(num_detections, vector<double>(num_trackers));
 
-      for (int d = 0; d < detections.size(); d++)
+      for (size_t d = 0; d < num_detections; ++d)
       {
-            for (int t = 0; t < trackers.size(); t++)
+            for (size_t t = 0; t < num_trackers; ++t)
             {
                   iou_matrix[d][t] = iou(detections[d], trackers[t]);
             }
@@ -72,35 +90,50 @@ associate_detections_to_trackers(vector<vector<double>> detections, vector<vecto
 
       std::pair<std::vector<int>, std::vector<int>> matched_indices = solver.solve(iou_matrix);
 
+      std::unordered_set<int> matched_detections(matched_indices.first.begin(), matched_indices.first.end());
+      std::unordered_set<int> matched_trackers(matched_indices.second.begin(), matched_indices.second.end());
+
+      const size_t num_matched_detections = matched_indices.first.size();
+      const size_t num_matched_trackers = matched_indices.second.size();
+
       vector<int> unmatched_detections;
-      for (int d = 0; d < detections.size(); d++)
+      unmatched_detections.reserve(num_detections);
+      for (size_t d = 0; d < num_detections; ++d)
       {
-            if (find(matched_indices.first.begin(), matched_indices.first.end(), d) == matched_indices.first.end())
+            if (matched_detections.find(d) == matched_detections.end())
             {
                   unmatched_detections.push_back(d);
             }
       }
 
       vector<int> unmatched_trackers;
-      for (int t = 0; t < trackers.size(); t++)
+      unmatched_trackers.reserve(num_trackers);
+      for (size_t t = 0; t < num_trackers; t++)
       {
-            if (find(matched_indices.second.begin(), matched_indices.second.end(), t) == matched_indices.second.end())
+            if (matched_trackers.find(t) == matched_trackers.end())
             {
                   unmatched_trackers.push_back(t);
             }
       }
 
       vector<vector<int>> matches;
-      for (int m = 0; m < matched_indices.first.size(); m++)
+      matches.reserve(num_matched_detections);
+
+      // matched detection
+      for (size_t m = 0; m < matched_indices.first.size(); ++m)
       {
-            if (iou_matrix[matched_indices.first[m]][matched_indices.second[m]] < iou_threshold)
+            int d = matched_indices.first[m];
+            int t = matched_indices.second[m];
+            double iou_value = iou_matrix[d][t];
+
+            if (iou_value < iou_threshold)
             {
-                  unmatched_detections.push_back(matched_indices.first[m]);
-                  unmatched_trackers.push_back(matched_indices.second[m]);
+                  unmatched_detections.push_back(d);
+                  unmatched_trackers.push_back(t);
             }
             else
             {
-                  matches.push_back(vector<int>{matched_indices.first[m], matched_indices.second[m]});
+                  matches.push_back(vector<int>{d, t});
             }
       }
 

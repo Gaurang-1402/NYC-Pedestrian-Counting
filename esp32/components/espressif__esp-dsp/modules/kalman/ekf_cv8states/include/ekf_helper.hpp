@@ -4,7 +4,7 @@
 #include <ekf.h>
 #include "tracking_utils.hpp"
 
-class KalmanBoxTracker : private ekf
+class KalmanBoxTracker : public ekf
 {
 public:
       static int count;
@@ -20,42 +20,6 @@ public:
       KalmanBoxTracker(vector<double> bbox) : ekf(7, 4)
       {
 
-            // kf.F = {{1, 0, 0, 0, 1, 0, 0},
-            //         {0, 1, 0, 0, 0, 1, 0},
-            //         {0, 0, 1, 0, 0, 0, 1},
-            //         {0, 0, 0, 1, 0, 0, 0},
-            //         {0, 0, 0, 0, 1, 0, 0},
-            //         {0, 0, 0, 0, 0, 1, 0},
-            //         {0, 0, 0, 0, 0, 0, 1}};
-
-            /*
-
-            x: state
-            P: uncertainty covariance
-            Q: process uncertainty
-            B: control transition matrix
-            F: state transition matrix
-            H: Measurement function
-            R: state uncertainty
-            M: process-measurement cross correlation
-
-            K: kalmna gain
-
-            S: system uncertainty
-            */
-            // kf.H = {{1, 0, 0, 0, 0, 0, 0},
-            //         {0, 1, 0, 0, 0, 0, 0},
-            //         {0, 0, 1, 0, 0, 0, 0},
-            //         {0, 0, 0, 1, 0, 0, 0}};
-
-            // TODO: You'll need to implement the equivalent operations for the R, P and Q matrices
-            // The below lines are placeholders for reference
-            // kf.R[2:,2:] *= 10.
-            // kf.P[4:,4:] *= 1000.
-            // kf.P *= 10.
-            // kf.Q[-1,-1] *= 0.01
-            // kf.Q[4:,4:] *= 0.01
-
             auto converted_bbox = convert_bbox_to_z(bbox);
             for (int i = 0; i < 4; i++)
                   X(0, i) = converted_bbox[i];
@@ -69,7 +33,78 @@ public:
             objclass = 0;
       }
 
-      void LinearizeFG(dspm::Mat &x, float *u)
+      KalmanBoxTracker(const KalmanBoxTracker &x_) : ekf(7, 4)
+      {
+            this->id = x_.id;
+            this->time_since_update = x_.time_since_update;
+            this->hits = x_.hits;
+            this->hit_streak = x_.hit_streak;
+            this->age = x_.age;
+            this->objclass = x_.objclass;
+            this->history = x_.history;
+
+            this->R = dspm::Mat(x_.R);
+
+            this->X = dspm::Mat(x_.X);
+            this->F = dspm::Mat(x_.F);
+            this->G = dspm::Mat(x_.G);
+
+            this->P = dspm::Mat(x_.P);
+            this->Q = dspm::Mat(x_.Q);
+
+            this->NUMX = x_.NUMX;
+            this->NUMW = x_.NUMW;
+            this->HP = new float[this->NUMX];
+            this->Km = new float[this->NUMX];
+            for (size_t i = 0; i < this->NUMX; i++)
+            {
+                  this->HP[i] = x_.HP[i];
+                  this->Km[i] = x_.Km[i];
+            }
+      }
+
+      ~KalmanBoxTracker()
+      {
+      }
+
+      KalmanBoxTracker &
+      operator=(const KalmanBoxTracker &x_)
+      {
+            this->id = x_.id;
+            this->time_since_update = x_.time_since_update;
+            this->hits = x_.hits;
+            this->hit_streak = x_.hit_streak;
+            this->age = x_.age;
+            this->objclass = x_.objclass;
+            this->history = x_.history;
+            // Delete our old matrices
+            // printf("Deleting old matrices\n");
+
+            // printf("Deleted old matrices\n");
+
+            this->R = dspm::Mat(x_.R);
+
+            this->X = dspm::Mat(x_.X);
+            this->F = dspm::Mat(x_.F);
+            this->G = dspm::Mat(x_.G);
+
+            this->P = dspm::Mat(x_.P);
+            this->Q = dspm::Mat(x_.Q);
+
+            this->NUMX = x_.NUMX;
+            this->NUMW = x_.NUMW;
+            // printf("Copied new matrices\n");
+            for (size_t i = 0; i < this->NUMX; i++)
+            {
+                  this->HP[i] = x_.HP[i];
+                  this->Km[i] = x_.Km[i];
+            }
+            // printf("Copied new matrices_2\n");
+
+            return *this;
+      }
+
+      virtual void LinearizeFG(dspm::Mat &x, float *u)
       {
 
             this->F *= 0; // Initialize F and G matrixes.
@@ -84,11 +119,11 @@ public:
                   F(i, i - 4) = 1.0;
 
             // dqdot/dvector
-            dspm::Mat dq = -0.5 * qProduct(x.data);
-            dspm::Mat dq_q = dq.Get(0, 4, 1, 3);
+            // dspm::Mat dq = -0.5 * qProduct(x.data);
+            // dspm::Mat dq_q = dq.Get(0, 4, 1, 3);
 
-            // dqdot / dnw
-            G.Copy(dq_q, 0, 0);
+            // // dqdot / dnw
+            // G.Copy(dq_q, 0, 0);
             // dqdot / dwbias
             // F.Copy(dq_q, 0, 4);
 
@@ -108,51 +143,34 @@ public:
             }
       }
 
-      virtual dspm::Mat StateXDot(dspm::Mat &x, float *u);
-      // dspm::Mat StateXdot(dspm::Mat &x, float *u)
-      // {
+      virtual void Init(){};
 
-      //       dspm::Mat xdot(7, 1);
-      //       dspm::Mat w(3, 1);
-      //       dspm::Mat wbias(3, 1);
+      virtual dspm::Mat StateXdot(dspm::Mat &x, float *u)
+      {
+            return dspm::Mat();
+      };
 
-      //       for (int i = 0; i < 3; i++)
-      //       {
-      //             w(i, 0) = u[i];
-      //             wbias(i, 0) = u[i + 3];
-      //       }
-
-      //       dspm::Mat q = x.Get(0, 4, 1, 3);
-      //       dspm::Mat qdot = 0.5 * qProduct(w);
-      //       dspm::Mat qdot_q = qdot.Get(0, 4, 1, 3);
-
-      //       xdot.Copy(qdot_q, 0, 0);
-      //       xdot.Copy(wbias, 4, 0);
-
-      //       return xdot;
-      // }
-
-      void update(vector<double> bbox)
+      void update(const vector<double> &bbox, float dt = 1.0)
       {
             time_since_update = 0;
             history.clear();
             hits += 1;
             hit_streak += 1;
 
-            auto converted_bbox = convert_bbox_to_z(bbox);
+            vector<double> converted_bbox = convert_bbox_to_z(bbox);
             float u[4];
             for (int i = 0; i < 4; i++)
                   u[i] = converted_bbox[i];
 
-            Process(u, 1);
+            Process(u, dt);
       }
 
-      vector<double> predict()
+      vector<double> predict(float dt = 1.0)
       {
             if (X(1, 6) + X(1, 2) <= 0)
                   X(0, 6) *= 0.0;
             float u[4] = {0, 0, 0, 0};
-            Process(u, 1);
+            Process(u, dt);
             age += 1;
             if (time_since_update > 0)
                   hit_streak = 0;
@@ -161,7 +179,7 @@ public:
             vector<double> tmp_x(4);
             for (int i = 0; i < 4; ++i)
             {
-                  tmp_x[i] = X(1, i);
+                  tmp_x[i] = X(0, i);
             }
             history.push_back(convert_x_to_bbox(tmp_x));
             return history.back();
@@ -172,8 +190,21 @@ public:
             vector<double> tmp_x(4);
             for (int i = 0; i < 4; ++i)
             {
-                  tmp_x[i] = X(1, i);
+                  tmp_x[i] = X(0, i);
             }
+
+            // Print the current state
+            printf("Current state: [");
+            for (int i = 0; i < 2; ++i)
+            {
+                  printf("[ ");
+                  for (int j = 0; j < 4; ++j)
+                  {
+                        printf("%f ", X(i, j));
+                  }
+                  printf("] ");
+            }
+            printf("]\n");
 
             return convert_x_to_bbox(tmp_x);
       }

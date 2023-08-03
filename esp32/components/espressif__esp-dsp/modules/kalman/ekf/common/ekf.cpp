@@ -16,13 +16,13 @@
 #include <float.h>
 
 ekf::ekf(int x, int w) : NUMX(x),
-    NUMW(w),
-    X(*new dspm::Mat(x, 1)),
+                         NUMW(w),
+                         X(*new dspm::Mat(x, 1)),
 
-    F(*new dspm::Mat(x, x)),
-    G(*new dspm::Mat(x, w)),
-    P(*new dspm::Mat(x, x)),
-    Q(*new dspm::Mat(w, w))
+                         F(*new dspm::Mat(x, x)),
+                         G(*new dspm::Mat(x, w)),
+                         P(*new dspm::Mat(x, x)),
+                         Q(*new dspm::Mat(w, w))
 {
 
     this->P *= 0;
@@ -31,7 +31,8 @@ ekf::ekf(int x, int w) : NUMX(x),
     this->X.data[0] = 1; // direction to 0
     this->HP = new float[this->NUMX];
     this->Km = new float[this->NUMX];
-    for (size_t i = 0; i < this->NUMX; i++) {
+    for (size_t i = 0; i < this->NUMX; i++)
+    {
         this->HP[i] = 0;
         this->Km[i] = 0;
     }
@@ -39,6 +40,7 @@ ekf::ekf(int x, int w) : NUMX(x),
 
 ekf::~ekf()
 {
+    // printf("EKF destructor called\n");
     delete &X;
     delete &F;
     delete &G;
@@ -61,7 +63,7 @@ void ekf::RungeKutta(dspm::Mat &x, float *U, float dt)
 
     float dt2 = dt / 2.0f;
 
-    dspm::Mat Xlast = x;          // make a working copy
+    dspm::Mat Xlast = x;            // make a working copy
     dspm::Mat K1 = StateXdot(x, U); // k1 = f(x, u)
     x = Xlast + (K1 * dt2);
 
@@ -151,34 +153,43 @@ void ekf::Update(dspm::Mat &H, float *measured, float *expected, float *R)
     dspm::Mat Y(measured, H.rows, 1);
     dspm::Mat Z(expected, H.rows, 1);
 
-    for (int m = 0; m < H.rows; m++) {
-        for (int j = 0; j < this->NUMX; j++) {
+    for (int m = 0; m < H.rows; m++)
+    {
+        for (int j = 0; j < this->NUMX; j++)
+        {
             // Find Hp = H*P
             HP[j] = 0;
         }
-        for (int k = 0; k < this->NUMX; k++) {
-            for (int j = 0; j < this->NUMX; j++) {
+        for (int k = 0; k < this->NUMX; k++)
+        {
+            for (int j = 0; j < this->NUMX; j++)
+            {
                 // Find Hp = H*P
                 HP[j] += H(m, k) * P(k, j);
             }
         }
         HPHR = R[m]; // Find  HPHR = H*P*H' + R
-        for (int k = 0; k < this->NUMX; k++) {
+        for (int k = 0; k < this->NUMX; k++)
+        {
             HPHR += HP[k] * H(m, k);
         }
         float invHPHR = 1.0f / HPHR;
-        for (int k = 0; k < this->NUMX; k++) {
+        for (int k = 0; k < this->NUMX; k++)
+        {
             Km[k] = HP[k] * invHPHR; // find K = HP/HPHR
         }
-        for (int i = 0; i < this->NUMX; i++) {
+        for (int i = 0; i < this->NUMX; i++)
+        {
             // Find P(m)= P(m-1) + K*HP
-            for (int j = i; j < NUMX; j++) {
+            for (int j = i; j < NUMX; j++)
+            {
                 P(i, j) = P(j, i) = P(i, j) - Km[i] * HP[j];
             }
         }
 
         Error = Y(m, 0) - Z(m, 0);
-        for (int i = 0; i < this->NUMX; i++) {
+        for (int i = 0; i < this->NUMX; i++)
+        {
             // Find X(m)= X(m-1) + K*Error
             X(i, 0) = X(i, 0) + Km[i] * Error;
         }
@@ -189,7 +200,8 @@ void ekf::UpdateRef(dspm::Mat &H, float *measured, float *expected, float *R)
 {
     dspm::Mat h_t = H.t();
     dspm::Mat S = H * P * h_t; // +diag(R);
-    for (size_t i = 0; i < H.rows; i++) {
+    for (size_t i = 0; i < H.rows; i++)
+    {
         S(i, i) += R[i];
     }
 
@@ -277,15 +289,18 @@ dspm::Mat ekf::eul2rotm(float xyz[3])
 
 dspm::Mat ekf::rotm2eul(dspm::Mat &rotm)
 {
-    dspm::Mat result(3,1);
+    dspm::Mat result(3, 1);
     float x, y, z;
-//    float cy = sqrtf(rotm(2, 2) * rotm(2, 2) + rotm(2, 0) * rotm(2, 0));
+    //    float cy = sqrtf(rotm(2, 2) * rotm(2, 2) + rotm(2, 0) * rotm(2, 0));
     float cy = sqrtf(rotm(2, 2) * rotm(2, 2) + rotm(1, 2) * rotm(1, 2));
-    if (cy > 16 * FLT_EPSILON) {
+    if (cy > 16 * FLT_EPSILON)
+    {
         x = -atan2f(rotm(1, 2), rotm(2, 2));
         y = -atan2f(-rotm(0, 2), (float)cy);
         z = -atan2f(rotm(0, 1), rotm(0, 0));
-    } else {
+    }
+    else
+    {
         z = -atan2f(-rotm(1, 0), rotm(1, 1));
         y = -atan2f(-rotm(0, 2), (float)cy);
         x = 0;
@@ -316,38 +331,49 @@ dspm::Mat ekf::rotm2quat(dspm::Mat &m)
     float q1 = (r11 - r22 - r33 + 1.0f) / 4.0f;
     float q2 = (-r11 + r22 - r33 + 1.0f) / 4.0f;
     float q3 = (-r11 - r22 + r33 + 1.0f) / 4.0f;
-    if (q0 < 0.0f) {
+    if (q0 < 0.0f)
+    {
         q0 = 0.0f;
     }
-    if (q1 < 0.0f) {
+    if (q1 < 0.0f)
+    {
         q1 = 0.0f;
     }
-    if (q2 < 0.0f) {
+    if (q2 < 0.0f)
+    {
         q2 = 0.0f;
     }
-    if (q3 < 0.0f) {
+    if (q3 < 0.0f)
+    {
         q3 = 0.0f;
     }
     q0 = sqrt(q0);
     q1 = sqrt(q1);
     q2 = sqrt(q2);
     q3 = sqrt(q3);
-    if (q0 >= q1 && q0 >= q2 && q0 >= q3) {
+    if (q0 >= q1 && q0 >= q2 && q0 >= q3)
+    {
         q0 *= +1.0f;
         q1 *= SIGN(r32 - r23);
         q2 *= SIGN(r13 - r31);
         q3 *= SIGN(r21 - r12);
-    } else if (q1 >= q0 && q1 >= q2 && q1 >= q3) {
+    }
+    else if (q1 >= q0 && q1 >= q2 && q1 >= q3)
+    {
         q0 *= SIGN(r32 - r23);
         q1 *= +1.0f;
         q2 *= SIGN(r21 + r12);
         q3 *= SIGN(r13 + r31);
-    } else if (q2 >= q0 && q2 >= q1 && q2 >= q3) {
+    }
+    else if (q2 >= q0 && q2 >= q1 && q2 >= q3)
+    {
         q0 *= SIGN(r13 - r31);
         q1 *= SIGN(r21 + r12);
         q2 *= +1.0f;
         q3 *= SIGN(r32 + r23);
-    } else if (q3 >= q0 && q3 >= q1 && q3 >= q2) {
+    }
+    else if (q3 >= q0 && q3 >= q1 && q3 >= q2)
+    {
         q0 *= SIGN(r21 - r12);
         q1 *= SIGN(r31 + r13);
         q2 *= SIGN(r32 + r23);
@@ -406,4 +432,3 @@ dspm::Mat ekf::dFdq_inv(dspm::Mat &vector, dspm::Mat &q)
     result *= 2;
     return result;
 }
-

@@ -47,7 +47,7 @@ static bool gEvent = true;
 static bool gReturnFB = true;
 static bool debug_mode = false;
 
-#define CONFIDENCE 25
+#define CONFIDENCE 50
 #define IOU 45
 
 const uint16_t box_color[] = {0x0000, 0xFFFF, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0, 0x07FF, 0x07FF, 0x07FF, 0x07FF};
@@ -84,6 +84,105 @@ struct Line
 int pedCountHorizontal = 0;
 int pedCountVertical = 0;
 int pedCountDiagonal = 0;
+
+// Function to find orientation of ordered triplet (p, q, r).
+// The function returns following values
+// 0 --> p, q and r are colinear
+// 1 --> Clockwise
+// 2 --> Counterclockwise
+int orientation(const Point &p, const Point &q, const Point &r)
+{
+    int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+
+    if (val == 0)
+        return 0; // colinear
+
+    return (val > 0) ? 1 : 2; // clock or counterclock wise
+}
+
+bool onSegment(const Point &p, const Point &q, const Point &r)
+{
+    if (q.x <= max(p.x, r.x) && q.x >= min(p.x, r.x) &&
+        q.y <= max(p.y, r.y) && q.y >= min(p.y, r.y))
+        return true;
+
+    return false;
+}
+
+// Function that returns true if line segment 'p1q1' and 'p2q2' intersect.
+bool doIntersect(const Point &p1, const Point &q1, const Point &p2, const Point &q2)
+{
+    // Find the four orientations needed for general and special cases
+    int o1 = orientation(p1, q1, p2);
+    int o2 = orientation(p1, q1, q2);
+    int o3 = orientation(p2, q2, p1);
+    int o4 = orientation(p2, q2, q1);
+
+    // General case
+    if (o1 != o2 && o3 != o4)
+        return true;
+
+    // Special Cases
+    // p1, q1 and p2 are colinear and p2 lies on segment p1q1
+    if (o1 == 0 && onSegment(p1, p2, q1))
+        return true;
+
+    // p1, q1 and p2 are colinear and q2 lies on segment p1q1
+    if (o2 == 0 && onSegment(p1, q2, q1))
+        return true;
+
+    // p2, q2 and p1 are colinear and p1 lies on segment p2q2
+    if (o3 == 0 && onSegment(p2, p1, q2))
+        return true;
+
+    // p2, q2 and q1 are colinear and q1 lies on segment p2q2
+    if (o4 == 0 && onSegment(p2, q1, q2))
+        return true;
+
+    return false; // Doesn't fall in any of the above cases
+}
+
+bool crosses_line(int x1, int y1, int x2, int y2, const Line &line)
+{
+    // Check if the line segment from last_centroid to centroid crosses the line.
+    // Return true if it does, false otherwise.
+
+    Point p1(x1, y1);
+    Point q1(x2, y2);
+
+    return doIntersect(p1, q1, line.p1, line.p2);
+}
+
+void update(std::vector<std::vector<double>> bboxes, const Line &horizontalLine, const Line &verticalLine, const Line &diagonalLine)
+{
+    if (bboxes.empty())
+    {
+        return;
+    }
+
+    for (int i = 0; i < bboxes.size(); ++i)
+    {
+
+        int top_left_x = bboxes[i][0];
+        int top_left_y = bboxes[i][1];
+        int bottom_right_x = bboxes[i][2] + bboxes[i][0];
+        int bottom_right_y = bboxes[i][3] + bboxes[i][1];
+
+        // see if crosses horizontal line
+        if (crosses_line(top_left_x, top_left_y, bottom_right_x, bottom_right_y, horizontalLine))
+        {
+            pedCountHorizontal++;
+        }
+        else if (crosses_line(top_left_x, top_left_y, bottom_right_x, bottom_right_y, verticalLine))
+        {
+            pedCountVertical++;
+        }
+        else if (crosses_line(top_left_x, top_left_y, bottom_right_x, bottom_right_y, diagonalLine))
+        {
+            pedCountDiagonal++;
+        }
+    }
+}
 
 std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point);
 
@@ -123,9 +222,9 @@ static void task_process_handler(void *arg)
     printf("Format: {\"height\": %d, \"width\": %d, \"channels\": %d, \"model\": \"yolo\"}\r\n", h, w, c);
 
     // Initialize lines
-    // Line horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
-    // Line verticalLine = Line(Point(w / 2, 0), Point(w / 2, h));   // vertical line
-    // Line diagonalLine = Line(Point(0, 0), Point(w, h));           // diagonal line
+    Line horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
+    Line verticalLine = Line(Point(w / 2, 0), Point(w / 2, h));   // vertical line
+    Line diagonalLine = Line(Point(0, 0), Point(w, h));           // diagonal line
 
     // Initialize tracked objects
     // std::vector<TrackedObject> trackedObjects;
@@ -195,6 +294,13 @@ static void task_process_handler(void *arg)
                 // YOLO list
                 _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, w, h, records, num_class, scale, zero_point);
 
+                fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // Red
+                // Draw vertical line
+                fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // Green
+                // Draw diagonal line
+
+                // fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
+
                 num_pedestrian += std::distance(_yolo_list.begin(), _yolo_list.end());
 
                 std::vector<std::vector<double>>
@@ -204,13 +310,17 @@ static void task_process_handler(void *arg)
 
                 // printf("dt: %f\r\n", dt);
 
+                std::vector<std::vector<double>> combined;
+                combined.insert(combined.end(), measurements.begin(), measurements.end());
+
                 measurements = sort.update(measurements, s_time);
+                combined.insert(combined.end(), measurements.begin(), measurements.end());
                 num_pedestrian -= measurements.size();
 
                 // printf("Measurements: %d\r\n", measurements.size());
-                std::cout
-                    << "\033[1;33m"
-                    << "Pedestrian Count: " << num_pedestrian << "\033[0m" << std::endl;
+                // std::cout
+                //     << "\033[1;33m"
+                //     << "Pedestrian Count: " << num_pedestrian << "\033[0m" << std::endl;
                 // print
                 for (auto &measurement : measurements)
                 {
@@ -219,18 +329,20 @@ static void task_process_handler(void *arg)
                     // draw
                     fb_gfx_drawRect(frame, measurement[0], measurement[1], measurement[2], measurement[3], 0xFF0000); // Red
                     // write count text
-                    printf("ID: %f\r\n", measurement[4]);
-                    fb_gfx_printf(frame, measurement[0], measurement[1] + 5, 0xFF0000, "%d", measurement[4]);
+                    // printf("ID: %f\r\n", measurement[4]);
+                    // fb_gfx_printf(frame, measurement[0], measurement[1] + 5, 0xFF0000, "%d", measurement[4]);
                     // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
                 }
+
+                update(combined, horizontalLine, verticalLine, diagonalLine);
 
                 // printf("Number of tracks: %d\r\n", sort.trackers.size());
                 // Update SORT
 
                 // Print pedestrian counts
-                // std::cout << "\033[1;33mPedestrian Count for Horizontal Line: " << pedCountHorizontal << "\033[0m\n";
-                // std::cout << "\033[1;33mPedestrian Count for Vertical Line: " << pedCountVertical << "\033[0m\n";
-                // std::cout << "\033[1;33mPedestrian Count for Diagonal Line: " << pedCountDiagonal << "\033[0m\n"; // Yellow
+                std::cout << "\033[1;33mPedestrian Count for Horizontal Line: " << pedCountHorizontal << "\033[0m\n";
+                std::cout << "\033[1;33mPedestrian Count for Vertical Line: " << pedCountVertical << "\033[0m\n";
+                std::cout << "\033[1;33mPedestrian Count for Diagonal Line: " << pedCountDiagonal << "\033[0m\n"; // Yellow
 
                 printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n", (dsp_end_time - dsp_start_time), (end_time - start_time), 0);
                 bool found = false;
@@ -249,7 +361,7 @@ static void task_process_handler(void *arg)
                         yolo.w = uint16_t(float(yolo.w) / float(w) * float(frame->width));
                         yolo.h = uint16_t(float(yolo.h) / float(h) * float(frame->height));
                         fb_gfx_drawRect2(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2, yolo.w, yolo.h, box_color[index % (sizeof(box_color) / sizeof(box_color[0]))], 4);
-                        // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h/2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
+                        // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
                         printf("        {\"class\": \"%d\", \"x\": %d, \"y\": %d, \"w\": %d, \"h\": %d, \"confidence\": %d},\n", yolo.target, yolo.x, yolo.y, yolo.w, yolo.h, yolo.confidence);
                         index++;
                     }

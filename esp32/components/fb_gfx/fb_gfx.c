@@ -19,7 +19,6 @@
 #include "stdlib.h"
 #include "fb_gfx.h"
 
-
 typedef struct
 {                            // Data stored PER GLYPH
     uint16_t bitmapOffset;   // Pointer into GFXfont->bitmap
@@ -80,21 +79,6 @@ void fb_gfx_drawPixel(camera_fb_t *fb, int32_t x, int32_t y, uint32_t color)
     }
 }
 
-void fb_gfx_drawLine(camera_fb_t *fb, int x1, int y1, int x2, int y2, uint32_t color) {
-    int dx = abs(x2 - x1), sx = x1 < x2 ? 1 : -1;
-    int dy = abs(y2 - y1), sy = y1 < y2 ? 1 : -1; 
-    int err = (dx > dy ? dx : -dy) / 2, e2;
-
-    while(true) {
-        fb_gfx_fillRect(fb, x1, y1, 1, 1, color); // Fill a 1x1 rect at the point to simulate a pixel
-        if (x1 == x2 && y1 == y2) break;
-        e2 = err;
-        if (e2 > -dx) { err -= dy; x1 += sx; }
-        if (e2 < dy) { err += dx; y1 += sy; }
-    }
-}
-
-
 void fb_gfx_fillRect(camera_fb_t *fb, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color)
 {
     int bytes_per_pixel = 0;
@@ -111,7 +95,13 @@ void fb_gfx_fillRect(camera_fb_t *fb, int32_t x, int32_t y, int32_t w, int32_t h
     default:
         break;
     }
+    if (x > fb->width || y > fb->height)
+    {
+        return;
+    }
 
+    w = (x + w > fb->width - 1) ? (fb->width - x - 1) : w;
+    h = (y + h > fb->height - 1) ? (fb->height - y - 1) : h;
     int32_t line_step = (fb->width - w) * bytes_per_pixel;
     uint8_t *data = fb->buf + ((x + (y * fb->width)) * bytes_per_pixel);
     uint8_t c0 = color >> 16;
@@ -274,6 +264,14 @@ void fb_gfx_drawRect(camera_fb_t *fb, int32_t x, int32_t y, int32_t w, int32_t h
     fb_gfx_drawFastHLine(fb, x, y + h - 1, w, color);
     fb_gfx_drawFastVLine(fb, x, y, h, color);
     fb_gfx_drawFastVLine(fb, x + w - 1, y, h, color);
+}
+
+void fb_gfx_drawRect2(camera_fb_t *fb, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color, int32_t weight)
+{
+    for (int i = 0; i < weight; i++)
+    {
+        fb_gfx_drawRect(fb, x + i, y + i, w - i * 2, h - i * 2, color);
+    }
 }
 
 void fb_gfx_drawCicle(camera_fb_t *fb, int32_t x0, int32_t y0, int32_t r, uint32_t color)

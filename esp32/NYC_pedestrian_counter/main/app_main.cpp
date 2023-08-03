@@ -13,7 +13,7 @@ extern "C" void app_main()
 {
 
   xQueueAIFrame = xQueueCreate(2, sizeof(camera_fb_t *));
-  xQueueLCDFrame = xQueueCreate(1, sizeof(camera_fb_t *));
+  xQueueLCDFrame = xQueueCreate(2, sizeof(camera_fb_t *));
 
   register_camera(PIXFORMAT_RGB565, FRAMESIZE_240X240, 2, xQueueAIFrame);
   register_algo_yolo(xQueueAIFrame, NULL, NULL, xQueueLCDFrame, false);

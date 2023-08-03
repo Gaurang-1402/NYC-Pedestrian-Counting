@@ -18,5 +18,4 @@ extern "C" void app_main()
   register_camera(PIXFORMAT_RGB565, FRAMESIZE_240X240, 2, xQueueAIFrame);
   register_algo_yolo(xQueueAIFrame, NULL, NULL, xQueueLCDFrame, false);
   register_lcd(xQueueLCDFrame, NULL, true);
-
 }

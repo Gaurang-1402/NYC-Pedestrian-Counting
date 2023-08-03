@@ -12,25 +12,32 @@ using namespace std;
 
 double iou(const vector<double> &bb_test, const vector<double> &bb_gt)
 {
-      double bb_test_width = bb_test[2] - bb_test[0];
-      double bb_test_height = bb_test[3] - bb_test[1];
-      double bb_gt_width = bb_gt[2] - bb_gt[0];
-      double bb_gt_height = bb_gt[3] - bb_gt[1];
+
+      // TL_x, TL_y, w, h
+      double bb_test_width = bb_test[2];
+      double bb_test_height = bb_test[3];
+      double bb_gt_width = bb_gt[2];
+      double bb_gt_height = bb_gt[3];
 
       double xx1 = max(bb_test[0], bb_gt[0]);
       double yy1 = max(bb_test[1], bb_gt[1]);
-      double xx2 = min(bb_test[2], bb_gt[2]);
-      double yy2 = min(bb_test[3], bb_gt[3]);
+      double xx2 = min(bb_test[2] + bb_test[0], bb_gt[2] + bb_gt[0]);
+      double yy2 = min(bb_test[3] + bb_test[1], bb_gt[3] + bb_gt[1]);
 
-      double w = max(0.0, abs(xx2 - xx1));
-      double h = max(0.0, abs(yy2 - yy1));
-      double wh = w * h;
+      double w = max(0.0, xx2 - xx1 + 1);
+      double h = max(0.0, yy2 - yy1 + 1);
+      double interArea = w * h;
 
-      double union_area = ((bb_test_width * bb_test_height) + (bb_gt_width * bb_gt_height) - wh);
+      double bb_test_area = (bb_test_width + 1) * (bb_test_height + 1);
+      double bb_gt_area = (bb_gt_width + 1) * (bb_gt_height + 1);
 
-      printf("iou: %f\n", wh / union_area);
+      double unionArea = bb_test_area + bb_gt_area - interArea;
 
-      return (union_area > 0.0) ? wh / union_area : 0.0;
+      double iou = interArea / (abs(unionArea) + numeric_limits<double>::epsilon());
+
+      printf("iou: %f\n", iou);
+
+      return iou;
 }
 
 vector<double> convert_bbox_to_z(const vector<double> &bbox)
@@ -89,6 +96,12 @@ associate_detections_to_trackers(const vector<vector<double>> &detections, const
       LinearSumAssignment solver;
 
       std::pair<std::vector<int>, std::vector<int>> matched_indices = solver.solve(iou_matrix);
+
+      // print
+      // for (size_t i = 0; i < matched_indices.first.size(); ++i)
+      // {
+      //       printf("matched_indices: %d, %d\n", matched_indices.first[i], matched_indices.second[i]);
+      // }
 
       std::unordered_set<int> matched_detections(matched_indices.first.begin(), matched_indices.first.end());
       std::unordered_set<int> matched_trackers(matched_indices.second.begin(), matched_indices.second.end());

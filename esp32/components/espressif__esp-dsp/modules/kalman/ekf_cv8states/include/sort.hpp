@@ -21,6 +21,7 @@ public:
 
       std::vector<std::vector<double>> update(const std::vector<std::vector<double>> &dets, float s_time)
       {
+            // dets is of form vector<vector<double>> where each vector<double> is a bounding box (x, y, width, height, score)
             frame_count++;
             std::vector<std::vector<double>> trks;
             // std::vector<std::vector<double>> trks(trackers.size(), std::vector<double>(5, 0));
@@ -50,6 +51,17 @@ public:
             }
 
             trks = std::move(temp_trks);
+
+            // print
+            // for (size_t i = 0; i < trks.size(); ++i)
+            // {
+            //       std::cout << "trk: " << trks[i][0] << " " << trks[i][1] << " " << trks[i][2] << " " << trks[i][3] << std::endl;
+            // }
+
+            // for (size_t i = 0; i < dets.size(); ++i)
+            // {
+            //       std::cout << "det: " << dets[i][0] << " " << dets[i][1] << " " << dets[i][2] << " " << dets[i][3] << std::endl;
+            // }
 
             trackers.erase(
                 std::remove_if(trackers.begin(), trackers.end(), [&](const KalmanBoxTracker &tracker)
@@ -100,7 +112,7 @@ public:
                   }
                   if (trackers[i].time_since_update <= max_age)
                   {
-                        temp_trackers2.emplace_back(trackers[i]);
+                        temp_trackers2.push_back(trackers[i]);
                   }
             }
             trackers = std::move(temp_trackers2);

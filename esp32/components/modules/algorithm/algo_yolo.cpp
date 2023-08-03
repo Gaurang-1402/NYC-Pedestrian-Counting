@@ -47,10 +47,10 @@ static bool gEvent = true;
 static bool gReturnFB = true;
 static bool debug_mode = false;
 
-#define CONFIDENCE 40
-#define IOU 30
+#define CONFIDENCE 25
+#define IOU 45
 
-const uint16_t box_color[] = {0x1FE0, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0};
+const uint16_t box_color[] = {0x0000, 0xFFFF, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0, 0x07FF, 0x07FF, 0x07FF, 0x07FF};
 
 std::vector<std::vector<double>> getMeasurements(std::forward_list<yolo_t> yolo_list)
 {
@@ -58,6 +58,7 @@ std::vector<std::vector<double>> getMeasurements(std::forward_list<yolo_t> yolo_
     for (const auto &yolo : yolo_list)
     {
         std::vector<double> measurement;
+        measurement.reserve(5);
         measurement.push_back(static_cast<double>(yolo.x));
         measurement.push_back(static_cast<double>(yolo.y));
         measurement.push_back(static_cast<double>(yolo.w));
@@ -122,15 +123,16 @@ static void task_process_handler(void *arg)
     printf("Format: {\"height\": %d, \"width\": %d, \"channels\": %d, \"model\": \"yolo\"}\r\n", h, w, c);
 
     // Initialize lines
-    Line horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
-    Line verticalLine = Line(Point(w / 2, 0), Point(w / 2, h));   // vertical line
-    Line diagonalLine = Line(Point(0, 0), Point(w, h));           // diagonal line
+    // Line horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
+    // Line verticalLine = Line(Point(w / 2, 0), Point(w / 2, h));   // vertical line
+    // Line diagonalLine = Line(Point(0, 0), Point(w, h));           // diagonal line
 
     // Initialize tracked objects
     // std::vector<TrackedObject> trackedObjects;
 
     // SORT class (counting)
     Sort sort;
+    int num_pedestrian = 0;
 
     while (true)
     {
@@ -189,11 +191,40 @@ static void task_process_handler(void *arg)
 
                 uint32_t records = output->dims->data[1];
                 uint32_t num_class = output->dims->data[2] - OBJECT_T_INDEX;
-                int16_t num_element = num_class + OBJECT_T_INDEX;
 
                 // YOLO list
                 _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, w, h, records, num_class, scale, zero_point);
 
+                num_pedestrian += std::distance(_yolo_list.begin(), _yolo_list.end());
+
+                std::vector<std::vector<double>>
+                    measurements = getMeasurements(_yolo_list);
+
+                // float dt = (esp_timer_get_time() - s_time) / 1000000.0; // Time in seconds
+
+                // printf("dt: %f\r\n", dt);
+
+                measurements = sort.update(measurements, s_time);
+                num_pedestrian -= measurements.size();
+
+                // printf("Measurements: %d\r\n", measurements.size());
+                std::cout
+                    << "\033[1;33m"
+                    << "Pedestrian Count: " << num_pedestrian << "\033[0m" << std::endl;
+                // print
+                for (auto &measurement : measurements)
+                {
+                    printf("Measurement: %f, %f, %f, %f\r\n", measurement[0], measurement[1], measurement[2], measurement[3]);
+
+                    // draw
+                    fb_gfx_drawRect(frame, measurement[0], measurement[1], measurement[2], measurement[3], 0xFF0000); // Red
+                    // write count text
+                    printf("ID: %f\r\n", measurement[4]);
+                    fb_gfx_printf(frame, measurement[0], measurement[1] + 5, 0xFF0000, "%d", measurement[4]);
+                    // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
+                }
+
+                // printf("Number of tracks: %d\r\n", sort.trackers.size());
                 // Update SORT
 
                 // Print pedestrian counts
@@ -206,6 +237,7 @@ static void task_process_handler(void *arg)
 
                 if (std::distance(_yolo_list.begin(), _yolo_list.end()) > 0)
                 {
+                    int index = 0;
                     found = true;
                     printf("    Objects found: %d\n", std::distance(_yolo_list.begin(), _yolo_list.end()));
                     printf("    Objects:\n");
@@ -216,33 +248,14 @@ static void task_process_handler(void *arg)
                         yolo.y = uint16_t(float(yolo.y) / float(h) * float(frame->height));
                         yolo.w = uint16_t(float(yolo.w) / float(w) * float(frame->width));
                         yolo.h = uint16_t(float(yolo.h) / float(h) * float(frame->height));
-                        fb_gfx_drawRect(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2, yolo.w, yolo.h, box_color[yolo.target % (sizeof(box_color) / sizeof(box_color[0]))]);
-                        // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
+                        fb_gfx_drawRect2(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2, yolo.w, yolo.h, box_color[index % (sizeof(box_color) / sizeof(box_color[0]))], 4);
+                        // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h/2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
                         printf("        {\"class\": \"%d\", \"x\": %d, \"y\": %d, \"w\": %d, \"h\": %d, \"confidence\": %d},\n", yolo.target, yolo.x, yolo.y, yolo.w, yolo.h, yolo.confidence);
+                        index++;
                     }
                     printf("    ]\n");
                 }
 
-                std::vector<std::vector<double>> measurements = getMeasurements(_yolo_list);
-
-                float dt = (esp_timer_get_time() - s_time) / 1000000.0; // Time in seconds
-
-                printf("dt: %f\r\n", dt);
-
-                measurements = sort.update(measurements, s_time);
-
-                printf("Measurements: %d\r\n", measurements.size());
-
-                // print
-                for (auto &measurement : measurements)
-                {
-                    printf("Measurement: %f, %f, %f, %f\r\n", measurement[0], measurement[1], measurement[2], measurement[3]);
-
-                    // draw
-                    fb_gfx_drawFastHLine(frame, measurement[0], measurement[1], measurement[2], 0xFF0000); // Red
-                }
-
-                printf("Number of tracks: %d\r\n", sort.trackers.size());
                 if (!found)
                 {
                     printf("    No objects found\n");
@@ -372,7 +385,7 @@ static bool _object_nms_comparator(yolo_t &oa, yolo_t &ob)
 
 static bool _object_comparator(yolo_t &oa, yolo_t &ob)
 {
-    return oa.x < ob.x;
+    return oa.x > ob.x;
 }
 
 bool _object_remove(yolo_t &obj)
@@ -394,7 +407,7 @@ static uint16_t _overlap(float x1, float w1, float x2, float w2)
 void _soft_nms_obeject_detection(std::forward_list<yolo_t> &yolo_obj_list, uint8_t nms)
 {
     std::forward_list<yolo_t>::iterator max_box_obj;
-    yolo_obj_list.sort(_object_comparator);
+    yolo_obj_list.sort(_object_nms_comparator);
     for (std::forward_list<yolo_t>::iterator it = yolo_obj_list.begin(); it != yolo_obj_list.end(); ++it)
     {
         uint16_t area = it->w * it->h;
@@ -502,6 +515,8 @@ std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, 
                 obj.w = CLIP(int(w), 0, width);
                 obj.h = CLIP(int(h), 0, height);
             }
+            obj.w = (obj.x + obj.w) > width ? (width - obj.x) : obj.w;
+            obj.h = (obj.y + obj.h) > height ? (height - obj.y) : obj.h;
             obj.confidence = confidence;
             if (num_obj[obj.target] >= top_n)
             {

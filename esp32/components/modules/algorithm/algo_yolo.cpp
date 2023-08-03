@@ -32,7 +32,17 @@ using std::min;
 #include "esp_dsp.h"
 #include "ekf.h"
 
-#include <sort.hpp>
+
+#include <vector>
+#include <cmath>
+#include <unordered_set>
+#include <unordered_map>
+
+#include "esp_timer.h"
+
+// Assume tracking_utils.h and kalman_box_tracker.h are defined with necessary functions
+
+#include "ekf_helper.hpp"
 
 // TODO fix imports
 
@@ -67,6 +77,13 @@ std::vector<std::vector<double>> getMeasurements(std::forward_list<yolo_t> yolo_
     return measurements;
 }
 
+
+
+/* ====================================================================== */
+
+// Start by defining points and lines to represent the counting lines
+
+
 struct Point
 {
     int x, y;
@@ -83,6 +100,209 @@ struct Line
 int pedCountHorizontal = 0;
 int pedCountVertical = 0;
 int pedCountDiagonal = 0;
+
+// Function to find orientation of ordered triplet (p, q, r).
+// The function returns following values
+// 0 --> p, q and r are colinear
+// 1 --> Clockwise
+// 2 --> Counterclockwise
+int orientation(Point p, Point q, Point r)
+{
+    int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+
+    if (val == 0) return 0;  // colinear
+
+    return (val > 0)? 1: 2; // clock or counterclock wise
+}
+
+bool onSegment(Point p, Point q, Point r)
+{
+    if (q.x <= max(p.x, r.x) && q.x >= min(p.x, r.x) &&
+        q.y <= max(p.y, r.y) && q.y >= min(p.y, r.y))
+       return true;
+
+    return false;
+}
+
+
+// Function that returns true if line segment 'p1q1' and 'p2q2' intersect.
+bool doIntersect(Point p1, Point q1, Point p2, Point q2)
+{
+    // Find the four orientations needed for general and special cases
+    int o1 = orientation(p1, q1, p2);
+    int o2 = orientation(p1, q1, q2);
+    int o3 = orientation(p2, q2, p1);
+    int o4 = orientation(p2, q2, q1);
+
+    // General case
+    if (o1 != o2 && o3 != o4)
+        return true;
+
+    // Special Cases
+    // p1, q1 and p2 are colinear and p2 lies on segment p1q1
+    if (o1 == 0 && onSegment(p1, p2, q1)) return true;
+
+    // p1, q1 and p2 are colinear and q2 lies on segment p1q1
+    if (o2 == 0 && onSegment(p1, q2, q1)) return true;
+
+    // p2, q2 and p1 are colinear and p1 lies on segment p2q2
+    if (o3 == 0 && onSegment(p2, p1, q2)) return true;
+
+    // p2, q2 and q1 are colinear and q1 lies on segment p2q2
+    if (o4 == 0 && onSegment(p2, q1, q2)) return true;
+
+    return false; // Doesn't fall in any of the above cases
+}
+
+
+std::unordered_map<int, Point> lastPositions;
+
+/* ====================================================================== */
+
+
+
+// Implement the C++ version of the Sort class
+class Sort
+{
+public:
+      Sort(int max_age = 2, int min_hits = 3) : max_age(max_age), min_hits(min_hits), frame_count(0) {}
+
+      std::vector<std::vector<double>> update(const std::vector<std::vector<double>> &dets, float s_time)
+      {
+            frame_count++;
+            std::vector<std::vector<double>> trks;
+            // std::vector<std::vector<double>> trks(trackers.size(), std::vector<double>(5, 0));
+            std::vector<int> to_del;
+            std::vector<std::vector<double>> ret;
+
+            for (size_t t = 0; t < trackers.size(); ++t)
+            {
+                  float dt = (esp_timer_get_time() - s_time) / 10000000.0f;
+                  std::vector<double> pos = trackers[t].predict(dt);
+                  trks.push_back({pos[0], pos[1], pos[2], pos[3], 0});
+
+                  if (std::isnan(pos[0]) || std::isnan(pos[1]) || std::isnan(pos[2]) || std::isnan(pos[3]))
+                  {
+                        to_del.push_back(t);
+                  }
+            }
+
+            for (auto& tracker : trackers) {
+                int id = tracker.id;
+                std::vector<double> state = tracker.get_state();
+                int centerX = (state[0] + state[2]) / 2;
+                int centerY = (state[1] + state[3]) / 2;
+
+                // Check for intersection with each line and increment count
+                if (lastPositions.count(id) > 0) {
+                    Point lastPos = lastPositions[id];
+                    if (doIntersect(lastPos, Point(centerX, centerY), horizontalLine.p1, horizontalLine.p2))
+                        pedCountHorizontal++;
+                    if (doIntersect(lastPos, Point(centerX, centerY), verticalLine.p1, verticalLine.p2))
+                        pedCountVertical++;
+                    if (doIntersect(lastPos, Point(centerX, centerY), diagonalLine.p1, diagonalLine.p2))
+                        pedCountDiagonal++;
+                }
+
+                // Update last position of this object
+                lastPositions[id] = Point(centerX, centerY);
+            }
+
+
+            std::vector<std::vector<double>> temp_trks;
+            temp_trks.reserve(trks.size() - to_del.size());
+            for (size_t i = 0; i < trks.size(); ++i)
+            {
+                  if (std::find(to_del.begin(), to_del.end(), static_cast<int>(i)) == to_del.end())
+                  {
+                        temp_trks.emplace_back(std::move(trks[i]));
+                  }
+            }
+
+            trks = std::move(temp_trks);
+
+            trackers.erase(
+                std::remove_if(trackers.begin(), trackers.end(), [&](const KalmanBoxTracker &tracker)
+                               {
+                               size_t index = &tracker - &trackers[0];
+                               bool shouldDelete = std::find(to_del.begin(), to_del.end(), static_cast<int>(index)) != to_del.end();
+
+                               // remove object from lastPositions if it's being deleted from trackers
+                               if (shouldDelete)
+                               {
+                                   lastPositions.erase(tracker.id);
+                               }
+
+                               return shouldDelete;
+                                }),
+                                        trackers.end()
+
+                );
+
+            auto [matched, unmatched] =
+                associate_detections_to_trackers(dets, trks);
+
+            auto &[unmatched_dets, unmatched_trks] = unmatched;
+
+            for (size_t t = 0; t < trackers.size(); ++t)
+            {
+                  if (std::find(unmatched_trks.begin(), unmatched_trks.end(), static_cast<int>(t)) == unmatched_trks.end())
+                  {
+                        auto x = [t](const std::vector<int> &pair)
+                        { return pair[1] == static_cast<int>(t); };
+
+                        int d = matched[static_cast<size_t>(std::find_if(matched.begin(), matched.end(), x) - matched.begin())][0];
+
+                        if (!dets[d].empty())
+                        {
+                              float dt = (esp_timer_get_time() - s_time) / 10000000.0f;
+                              trackers[t].update(dets[d], dt);
+                        }
+                  }
+            }
+
+            for (auto i : unmatched_dets)
+            {
+                  KalmanBoxTracker tracker(dets[i]);
+                  trackers.emplace_back(tracker);
+            }
+
+            const size_t tracker_size = trackers.size();
+
+            std::vector<KalmanBoxTracker> temp_trackers2;
+
+            for (size_t i = 0; i < tracker_size; ++i)
+            {
+                  std::vector<double> d = trackers[i].get_state();
+                  if ((trackers[i].time_since_update < 5) && (trackers[i].hit_streak >= min_hits - 1 || frame_count <= min_hits))
+                  {
+                        ret.emplace_back(std::vector<double>(d.begin(), d.end()));
+                        ret.back().push_back(trackers[i].id + 1);
+                  }
+                  if (trackers[i].time_since_update <= max_age)
+                  {
+                        temp_trackers2.emplace_back(trackers[i]);
+                  }
+                  else // if a tracker is not being moved to temp_trackers2, it is essentially being removed, so remove it from lastPositions as well
+                    {
+                        lastPositions.erase(trackers[i].id);
+                    }
+            }
+            trackers = std::move(temp_trackers2);
+
+            return ret;
+      }
+
+      std::vector<KalmanBoxTracker>
+          trackers;
+
+private:
+      int max_age;
+      int min_hits;
+      int frame_count;
+};
+
+
 
 std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point);
 
@@ -127,7 +347,6 @@ static void task_process_handler(void *arg)
     Line diagonalLine = Line(Point(0, 0), Point(w, h));           // diagonal line
 
     // Initialize tracked objects
-    // std::vector<TrackedObject> trackedObjects;
 
     // SORT class (counting)
     Sort sort;
@@ -194,12 +413,15 @@ static void task_process_handler(void *arg)
                 // YOLO list
                 _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, w, h, records, num_class, scale, zero_point);
 
+                fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // black
+                // Draw vertical line
+                fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // yellow
+                // Draw diagonal line
+                fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
+
                 // Update SORT
 
                 // Print pedestrian counts
-                // std::cout << "\033[1;33mPedestrian Count for Horizontal Line: " << pedCountHorizontal << "\033[0m\n";
-                // std::cout << "\033[1;33mPedestrian Count for Vertical Line: " << pedCountVertical << "\033[0m\n";
-                // std::cout << "\033[1;33mPedestrian Count for Diagonal Line: " << pedCountDiagonal << "\033[0m\n"; // Yellow
 
                 printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n", (dsp_end_time - dsp_start_time), (end_time - start_time), 0);
                 bool found = false;
@@ -230,6 +452,10 @@ static void task_process_handler(void *arg)
                 printf("dt: %f\r\n", dt);
 
                 measurements = sort.update(measurements, s_time);
+
+                std::cout << "\033[1;33mPedestrian Count for Horizontal Line: " << pedCountHorizontal << "\033[0m\n";
+                std::cout << "\033[1;33mPedestrian Count for Vertical Line: " << pedCountVertical << "\033[0m\n";
+                std::cout << "\033[1;33mPedestrian Count for Diagonal Line: " << pedCountDiagonal << "\033[0m\n"; // Yellow
 
                 printf("Measurements: %d\r\n", measurements.size());
 

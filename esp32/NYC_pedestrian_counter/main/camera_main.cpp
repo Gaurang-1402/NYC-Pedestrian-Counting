@@ -1,4 +1,3 @@
-
 #include "app_lcd.h"
 #include "app_camera.h"
 #include "algo_yolo.hpp"

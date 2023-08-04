@@ -509,11 +509,11 @@ static void task_process_handler(void *arg)
                 // YOLO list
                 _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, w, h, records, num_class, scale, zero_point);
 
-                fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // black
+                // fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // black
                 // Draw vertical line
-                fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // yellow
+                // fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // yellow
                 // Draw diagonal line
-                fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
+                // fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
 
                 std::vector<std::vector<double>>
                     measurements = getMeasurements(_yolo_list);
@@ -533,7 +533,7 @@ static void task_process_handler(void *arg)
                     printf("Measurement: %f, %f, %f, %f\r\n", measurement[0], measurement[1], measurement[2], measurement[3]);
 
                     // draw
-                    fb_gfx_drawRect(frame, measurement[0], measurement[1], measurement[2], measurement[3], 0xFF0000); // Red
+                    // fb_gfx_drawRect(frame, measurement[0], measurement[1], measurement[2], measurement[3], 0xFF0000); // Red
                 }
 
                 // printf("Number of tracks: %d\r\n", sort.trackers.size());
@@ -560,7 +560,7 @@ static void task_process_handler(void *arg)
                         yolo.y = uint16_t(float(yolo.y) / float(h) * float(frame->height));
                         yolo.w = uint16_t(float(yolo.w) / float(w) * float(frame->width));
                         yolo.h = uint16_t(float(yolo.h) / float(h) * float(frame->height));
-                        fb_gfx_drawRect2(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2, yolo.w, yolo.h, box_color[index % (sizeof(box_color) / sizeof(box_color[0]))], 4);
+                        // fb_gfx_drawRect2(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2, yolo.w, yolo.h, box_color[index % (sizeof(box_color) / sizeof(box_color[0]))], 4);
                         // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
                         printf("        {\"class\": \"%d\", \"x\": %d, \"y\": %d, \"w\": %d, \"h\": %d, \"confidence\": %d},\n", yolo.target, yolo.x, yolo.y, yolo.w, yolo.h, yolo.confidence);
                         index++;

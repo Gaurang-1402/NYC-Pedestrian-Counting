@@ -373,6 +373,8 @@ void sendMessage(void *pvParameter)
         pedCountHorizontal = 0;
         pedCountVertical = 0;
         pedCountDiagonal = 0;
+        // clear measurement hashmap
+        crossedLine.clear();
     }
     // vTaskDelay(TX_INTERVAL * pdMS_TO_TICKS(1000));
 }
@@ -706,6 +708,8 @@ int register_algo_yolo(const QueueHandle_t frame_i,
     // Get information about the memory area to use for the model's input.
     input = interpreter->input(0);
 
+    printf("Starting\n");
+
     if (ttn.join())
     {
         printf("Joined.\n");
@@ -713,10 +717,12 @@ int register_algo_yolo(const QueueHandle_t frame_i,
         xTaskCreatePinnedToCore(task_process_handler, TAG, 4 * 1024, NULL, 5, NULL, 0);
         if (xQueueEvent)
             xTaskCreatePinnedToCore(task_event_handler, TAG, 4 * 1024, NULL, 5, NULL, 1);
+        return 0;
     }
     else
     {
         printf("Join failed. Goodbye\n");
+        return 0;
     }
 
     return 0;

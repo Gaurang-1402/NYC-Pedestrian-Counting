@@ -44,8 +44,6 @@ using std::min;
 
 #include "ekf_helper.hpp"
 
-// TODO fix imports
-
 static const char *TAG = "yolo";
 
 static QueueHandle_t xQueueFrameI = NULL;
@@ -79,17 +77,20 @@ std::vector<std::vector<double>> getMeasurements(std::forward_list<yolo_t> yolo_
 }
 
 
-
 /* ====================================================================== */
 
 // Start by defining points and lines to represent the counting lines
+
 
 
 struct Point
 {
     int x, y;
     Point(int _x, int _y) : x(_x), y(_y) {}
+    Point() : x(0), y(0) {}  // Default constructor
+    // Other members...
 };
+
 
 struct Line
 {
@@ -101,6 +102,10 @@ struct Line
 int pedCountHorizontal = 0;
 int pedCountVertical = 0;
 int pedCountDiagonal = 0;
+
+Line horizontalLine(Point(0, 0), Point(0, 0));
+Line verticalLine(Point(0, 0), Point(0, 0));
+Line diagonalLine(Point(0, 0), Point(0, 0));
 
 // Function to find orientation of ordered triplet (p, q, r).
 // The function returns following values
@@ -124,7 +129,6 @@ bool onSegment(Point p, Point q, Point r)
 
     return false;
 }
-
 
 // Function that returns true if line segment 'p1q1' and 'p2q2' intersect.
 bool doIntersect(Point p1, Point q1, Point p2, Point q2)
@@ -155,12 +159,7 @@ bool doIntersect(Point p1, Point q1, Point p2, Point q2)
     return false; // Doesn't fall in any of the above cases
 }
 
-
 std::unordered_map<int, Point> lastPositions;
-
-/* ====================================================================== */
-
-
 
 // Implement the C++ version of the Sort class
 class Sort
@@ -304,106 +303,6 @@ private:
 };
 
 
-
-// Function to find orientation of ordered triplet (p, q, r).
-// The function returns following values
-// 0 --> p, q and r are colinear
-// 1 --> Clockwise
-// 2 --> Counterclockwise
-int orientation(const Point &p, const Point &q, const Point &r)
-{
-    int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
-
-    if (val == 0)
-        return 0; // colinear
-
-    return (val > 0) ? 1 : 2; // clock or counterclock wise
-}
-
-bool onSegment(const Point &p, const Point &q, const Point &r)
-{
-    if (q.x <= max(p.x, r.x) && q.x >= min(p.x, r.x) &&
-        q.y <= max(p.y, r.y) && q.y >= min(p.y, r.y))
-        return true;
-
-    return false;
-}
-
-// Function that returns true if line segment 'p1q1' and 'p2q2' intersect.
-bool doIntersect(const Point &p1, const Point &q1, const Point &p2, const Point &q2)
-{
-    // Find the four orientations needed for general and special cases
-    int o1 = orientation(p1, q1, p2);
-    int o2 = orientation(p1, q1, q2);
-    int o3 = orientation(p2, q2, p1);
-    int o4 = orientation(p2, q2, q1);
-
-    // General case
-    if (o1 != o2 && o3 != o4)
-        return true;
-
-    // Special Cases
-    // p1, q1 and p2 are colinear and p2 lies on segment p1q1
-    if (o1 == 0 && onSegment(p1, p2, q1))
-        return true;
-
-    // p1, q1 and p2 are colinear and q2 lies on segment p1q1
-    if (o2 == 0 && onSegment(p1, q2, q1))
-        return true;
-
-    // p2, q2 and p1 are colinear and p1 lies on segment p2q2
-    if (o3 == 0 && onSegment(p2, p1, q2))
-        return true;
-
-    // p2, q2 and q1 are colinear and q1 lies on segment p2q2
-    if (o4 == 0 && onSegment(p2, q1, q2))
-        return true;
-
-    return false; // Doesn't fall in any of the above cases
-}
-
-bool crosses_line(int x1, int y1, int x2, int y2, const Line &line)
-{
-    // Check if the line segment from last_centroid to centroid crosses the line.
-    // Return true if it does, false otherwise.
-
-    Point p1(x1, y1);
-    Point q1(x2, y2);
-
-    return doIntersect(p1, q1, line.p1, line.p2);
-}
-
-void update(std::vector<std::vector<double>> bboxes, const Line &horizontalLine, const Line &verticalLine, const Line &diagonalLine)
-{
-    if (bboxes.empty())
-    {
-        return;
-    }
-
-    for (int i = 0; i < bboxes.size(); ++i)
-    {
-
-        int top_left_x = bboxes[i][0];
-        int top_left_y = bboxes[i][1];
-        int bottom_right_x = bboxes[i][2] + bboxes[i][0];
-        int bottom_right_y = bboxes[i][3] + bboxes[i][1];
-
-        // see if crosses horizontal line
-        if (crosses_line(top_left_x, top_left_y, bottom_right_x, bottom_right_y, horizontalLine))
-        {
-            pedCountHorizontal++;
-        }
-        else if (crosses_line(top_left_x, top_left_y, bottom_right_x, bottom_right_y, verticalLine))
-        {
-            pedCountVertical++;
-        }
-        else if (crosses_line(top_left_x, top_left_y, bottom_right_x, bottom_right_y, diagonalLine))
-        {
-            pedCountDiagonal++;
-        }
-    }
-}
-
 std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point);
 
 // Globals, used for compatibility with Arduino-style sketches.
@@ -442,15 +341,14 @@ static void task_process_handler(void *arg)
     printf("Format: {\"height\": %d, \"width\": %d, \"channels\": %d, \"model\": \"yolo\"}\r\n", h, w, c);
 
     // Initialize lines
-    Line horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
-    Line verticalLine = Line(Point(w / 2, 0), Point(w / 2, h));   // vertical line
-    Line diagonalLine = Line(Point(0, 0), Point(w, h));           // diagonal line
+    horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
+    verticalLine = Line(Point(w / 2, 0), Point(w / 2, h));   // vertical line
+    diagonalLine = Line(Point(0, 0), Point(w, h));           // diagonal line
 
     // Initialize tracked objects
 
     // SORT class (counting)
     Sort sort;
-    int num_pedestrian = 0;
 
     while (true)
     {
@@ -519,14 +417,6 @@ static void task_process_handler(void *arg)
                 // Draw diagonal line
                 fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
 
-                fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // Red
-                // Draw vertical line
-                fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // Green
-                // Draw diagonal line
-
-                // fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
-
-                num_pedestrian += std::distance(_yolo_list.begin(), _yolo_list.end());
 
                 std::vector<std::vector<double>>
                     measurements = getMeasurements(_yolo_list);
@@ -540,26 +430,14 @@ static void task_process_handler(void *arg)
 
                 measurements = sort.update(measurements, s_time);
                 combined.insert(combined.end(), measurements.begin(), measurements.end());
-                num_pedestrian -= measurements.size();
 
-                // printf("Measurements: %d\r\n", measurements.size());
-                // std::cout
-                //     << "\033[1;33m"
-                //     << "Pedestrian Count: " << num_pedestrian << "\033[0m" << std::endl;
-                // print
                 for (auto &measurement : measurements)
                 {
                     printf("Measurement: %f, %f, %f, %f\r\n", measurement[0], measurement[1], measurement[2], measurement[3]);
 
                     // draw
                     fb_gfx_drawRect(frame, measurement[0], measurement[1], measurement[2], measurement[3], 0xFF0000); // Red
-                    // write count text
-                    // printf("ID: %f\r\n", measurement[4]);
-                    // fb_gfx_printf(frame, measurement[0], measurement[1] + 5, 0xFF0000, "%d", measurement[4]);
-                    // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
                 }
-
-                update(combined, horizontalLine, verticalLine, diagonalLine);
 
                 // printf("Number of tracks: %d\r\n", sort.trackers.size());
                 // Update SORT
@@ -593,28 +471,6 @@ static void task_process_handler(void *arg)
                     printf("    ]\n");
                 }
 
-                std::vector<std::vector<double>> measurements = getMeasurements(_yolo_list);
-
-                float dt = (esp_timer_get_time() - s_time) / 1000000.0; // Time in seconds
-
-                printf("dt: %f\r\n", dt);
-
-                measurements = sort.update(measurements, s_time);
-
-                std::cout << "\033[1;33mPedestrian Count for Horizontal Line: " << pedCountHorizontal << "\033[0m\n";
-                std::cout << "\033[1;33mPedestrian Count for Vertical Line: " << pedCountVertical << "\033[0m\n";
-                std::cout << "\033[1;33mPedestrian Count for Diagonal Line: " << pedCountDiagonal << "\033[0m\n"; // Yellow
-
-                printf("Measurements: %d\r\n", measurements.size());
-
-                // print
-                for (auto &measurement : measurements)
-                {
-                    printf("Measurement: %f, %f, %f, %f\r\n", measurement[0], measurement[1], measurement[2], measurement[3]);
-
-                    // draw
-                    fb_gfx_drawFastHLine(frame, measurement[0], measurement[1], measurement[2], 0xFF0000); // Red
-                }
 
                 printf("Number of tracks: %d\r\n", sort.trackers.size());
                 if (!found)

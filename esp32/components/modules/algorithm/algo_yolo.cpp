@@ -187,27 +187,6 @@ public:
                   }
             }
 
-            for (auto& tracker : trackers) {
-                int id = tracker.id;
-                std::vector<double> state = tracker.get_state();
-                int centerX = (state[0] + state[2]) / 2;
-                int centerY = (state[1] + state[3]) / 2;
-
-                // Check for intersection with each line and increment count
-                if (lastPositions.count(id) > 0) {
-                    Point lastPos = lastPositions[id];
-                    if (doIntersect(lastPos, Point(centerX, centerY), horizontalLine.p1, horizontalLine.p2))
-                        pedCountHorizontal++;
-                    if (doIntersect(lastPos, Point(centerX, centerY), verticalLine.p1, verticalLine.p2))
-                        pedCountVertical++;
-                    if (doIntersect(lastPos, Point(centerX, centerY), diagonalLine.p1, diagonalLine.p2))
-                        pedCountDiagonal++;
-                }
-
-                // Update last position of this object
-                lastPositions[id] = Point(centerX, centerY);
-            }
-
 
             std::vector<std::vector<double>> temp_trks;
             temp_trks.reserve(trks.size() - to_del.size());
@@ -255,6 +234,25 @@ public:
 
                         if (!dets[d].empty())
                         {
+
+
+                            std::vector<double> state = trackers[t].get_state();
+                            int id = trackers[t].id;
+                            int centerX = (state[0] + state[2]) / 2;
+                            int centerY = (state[1] + state[3]) / 2;
+                            // Check for intersection with each line and increment count
+                            if (lastPositions.count(id) > 0) {
+                                Point lastPos = lastPositions[id];
+                                if (doIntersect(lastPos, Point(centerX, centerY), horizontalLine.p1, horizontalLine.p2))
+                                    pedCountHorizontal++;
+                                if (doIntersect(lastPos, Point(centerX, centerY), verticalLine.p1, verticalLine.p2))
+                                    pedCountVertical++;
+                                if (doIntersect(lastPos, Point(centerX, centerY), diagonalLine.p1, diagonalLine.p2))
+                                    pedCountDiagonal++;
+                            }
+
+                            // Update last position of this object
+                            lastPositions[id] = Point(centerX, centerY);
                               float dt = (esp_timer_get_time() - s_time) / 10000000.0f;
                               trackers[t].update(dets[d], dt);
                         }

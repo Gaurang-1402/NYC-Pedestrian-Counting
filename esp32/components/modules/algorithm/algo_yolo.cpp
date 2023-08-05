@@ -54,8 +54,8 @@ static bool gEvent = true;
 static bool gReturnFB = true;
 static bool debug_mode = false;
 
-#define CONFIDENCE 50
-#define IOU 45
+#define CONFIDENCE 25
+#define IOU 25
 
 const uint16_t box_color[] = {0x0000, 0xFFFF, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0, 0x07FF, 0x07FF, 0x07FF, 0x07FF};
 

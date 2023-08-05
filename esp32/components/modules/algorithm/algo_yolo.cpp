@@ -55,7 +55,7 @@ static bool gReturnFB = true;
 static bool debug_mode = false;
 
 #define CONFIDENCE 25
-#define IOU 25
+#define IOU 45 // 20
 
 const uint16_t box_color[] = {0x0000, 0xFFFF, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0, 0x07FF, 0x07FF, 0x07FF, 0x07FF};
 
@@ -241,8 +241,8 @@ public:
                     int centerY = dets[d][1] + (dets[d][3] / 2);
 
                     // Check for intersection with each line and increment count
-                    printf("CrossedLine[%d]: %d\n", id, crossedLine[id]);
-                    if (lastPositions.count(id) > 0 && !crossedLine[id])
+                    // printf("CrossedLine[%d]: %d\n", id, crossedLine[id]);
+                    if (lastPositions.count(id) > 0) //&& !crossedLine[id])
                     {
                         Point lastPos = lastPositions[id];
                         if (doIntersect(lastPos, Point(centerX, centerY), horizontalLine.p1, horizontalLine.p2))

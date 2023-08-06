@@ -5,7 +5,7 @@ Some of the code is adapted and modified from: https://github.com/limengdu/Seeed
 
 ## Architecture
 
-![SmartSelect_20230704_173817_OneNote](https://github.com/Gaurang-1402/NYC-Pedestrian-Detection/assets/71042887/6005f7f1-8a3e-458f-9b62-4baa4feb18f7)
+![Copy of LPCV research diagram (1)](https://github.com/Gaurang-1402/NYC-Pedestrian-Counting/assets/71042887/17bc607b-7027-43fa-bd93-4effb7d54398)
 
 
 ## Important commands

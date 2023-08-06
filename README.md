@@ -5,7 +5,8 @@ Some of the code is adapted and modified from: https://github.com/limengdu/Seeed
 
 ## Architecture
 
-![Copy of LPCV research diagram (1)](https://github.com/Gaurang-1402/NYC-Pedestrian-Counting/assets/71042887/17bc607b-7027-43fa-bd93-4effb7d54398)
+![Copy of LPCV research diagram](https://github.com/Gaurang-1402/NYC-Pedestrian-Counting/assets/71042887/be166562-7030-4120-8ae2-9c8b36536c43)
+
 
 
 ## Important commands

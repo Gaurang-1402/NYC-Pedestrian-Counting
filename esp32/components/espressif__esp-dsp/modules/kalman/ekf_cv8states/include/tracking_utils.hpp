@@ -31,9 +31,9 @@ double iou(const vector<double> &bb_test, const vector<double> &bb_gt)
       double bb_test_area = (bb_test_width + 1) * (bb_test_height + 1);
       double bb_gt_area = (bb_gt_width + 1) * (bb_gt_height + 1);
 
-      double unionArea = bb_test_area + bb_gt_area - interArea;
+      double unionArea = (abs(bb_test_area + bb_gt_area - interArea) + numeric_limits<double>::epsilon());
 
-      double iou = interArea / (abs(unionArea) + numeric_limits<double>::epsilon());
+      double iou = (unionArea > 0) ? interArea / unionArea : 0;
 
       printf("iou: %f\n", iou);
 

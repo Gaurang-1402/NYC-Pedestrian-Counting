@@ -53,45 +53,7 @@ inline void DepthwiseConv(
   TFLITE_DCHECK_EQ(output_depth, input_depth * depth_multiplier);
   TFLITE_DCHECK_EQ(bias_shape.FlatSize(), output_depth);
 
-  for (int b = 0; b < batches; ++b) {
-    for (int out_y = 0; out_y < output_height; ++out_y) {
-      for (int out_x = 0; out_x < output_width; ++out_x) {
-        for (int ic = 0; ic < input_depth; ++ic) {
-          for (int m = 0; m < depth_multiplier; m++) {
-            const int oc = m + ic * depth_multiplier;
-            const int in_x_origin = (out_x * stride_width) - pad_width;
-            const int in_y_origin = (out_y * stride_height) - pad_height;
-            float total = 0.f;
-            for (int filter_y = 0; filter_y < filter_height; ++filter_y) {
-              for (int filter_x = 0; filter_x < filter_width; ++filter_x) {
-                const int in_x = in_x_origin + dilation_width_factor * filter_x;
-                const int in_y =
-                    in_y_origin + dilation_height_factor * filter_y;
-                // If the location is outside the bounds of the input image,
-                // use zero as a default value.
-                if ((in_x >= 0) && (in_x < input_width) && (in_y >= 0) &&
-                    (in_y < input_height)) {
-                  float input_value =
-                      input_data[Offset(input_shape, b, in_y, in_x, ic)];
-                  float filter_value = filter_data[Offset(
-                      filter_shape, 0, filter_y, filter_x, oc)];
-                  total += (input_value * filter_value);
-                }
-              }
-            }
-            float bias_value = 0.0f;
-            if (bias_data) {
-              bias_value = bias_data[oc];
-            }
-            output_data[Offset(output_shape, b, out_y, out_x, oc)] =
-                ActivationFunctionWithMinMax(total + bias_value,
-                                             output_activation_min,
-                                             output_activation_max);
-          }
-        }
-      }
-    }
-  }
+  
 }
 
 }  // end namespace reference_ops

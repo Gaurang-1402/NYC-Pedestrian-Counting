@@ -44,9 +44,9 @@ esp_err_t register_imu(
     imu_data->len = (window * (uint32_t)sample_rate) / 1000 * 3;
     imu_data->data = (float *)malloc(imu_data->len * sizeof(float));
 
-    printf("imu_data->len: %d\n", imu_data->len);
-    printf("imu_data->window: %d\n", imu_data->window);
-    printf("imu_data->sample_rate: %f\n", imu_data->sample_rate);
+    // printf("imu_data->len: %d\n", imu_data->len);
+    // printf("imu_data->window: %lu\n", imu_data->window);
+    // printf("imu_data->sample_rate: %f\n", imu_data->sample_rate);
 
     xQueueDataO = frame_o;
 

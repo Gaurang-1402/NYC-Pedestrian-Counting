@@ -33,7 +33,9 @@ using std::min;
 #include "nvs_flash.h"
 #include "esp_wifi.h"
 #include "esp_system.h"
-
+//ben contributre
+#include "esp_idf_version.h"
+#include "esp_mac.h"
 static const char *TAG = "yolo";
 
 static QueueHandle_t xQueueFrameI = NULL;
@@ -60,7 +62,7 @@ void get_chip_id(char *chipId)
 {
     uint8_t baseMac[6];
     esp_efuse_mac_get_default(baseMac);
-    sprintf(chipId, "%02X%02X%02X%02X%02X%02X", baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
+    printf(chipId, "%02X%02X%02X%02X%02X%02X", baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
 }
 
 const uint16_t box_color[] = {0x1FE0, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0};
@@ -316,7 +318,7 @@ const char *appKey = APPKEY;
 
 static TheThingsNetwork ttn;
 const unsigned TX_INTERVAL = 20;
-static uint8_t msgData[] = "Hello, world";
+// static uint8_t msgData[] = "Hello, world";
 
 void sendMessage(void *pvParameter)
 {
@@ -369,7 +371,7 @@ uint32_t ticks_now(void)
 void print_time(void)
 {
     uint32_t currentTime = ticks_now();
-    printf("Current time in milliseconds: %u\n", currentTime);
+    printf("Current time in milliseconds: %lu\n", currentTime);
 }
 // Globals, used for compatibility with Arduino-style sketches.
 namespace
@@ -562,7 +564,7 @@ static void task_process_handler(void *arg)
         // print_time();
         // vTaskDelay(100 / portTICK_PERIOD_MS);
     }
-    printf("we should never get here\n");
+    // printf("we should never get here\n");
 }
 
 static void task_event_handler(void *arg)
@@ -694,8 +696,9 @@ int register_algo_yolo(const QueueHandle_t frame_i,
 
     if (ttn.join())
     {
-        printf("Joined.\n");
-        printf("Chip ID is %s\n", chipId);
+        
+        printf( "Joined.\n");
+        
         xTaskCreatePinnedToCore(task_process_handler, TAG, 4 * 1024, NULL, 5, NULL, 0);
         if (xQueueEvent)
             xTaskCreatePinnedToCore(task_event_handler, TAG, 4 * 1024, NULL, 5, NULL, 1);

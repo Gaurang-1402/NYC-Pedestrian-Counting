@@ -78,7 +78,7 @@ static int check_reg_mask(uint8_t slv_addr, uint16_t reg, uint8_t mask)
 static void print_regs(uint8_t slv_addr)
 {
 #ifdef DEBUG_PRINT_REG
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(120));
     ESP_LOGI(TAG, "REG list look ======================");
     for (size_t i = 0xf0; i <= 0xfe; i++) {
         ESP_LOGI(TAG, "reg[0x%02x] = 0x%02x", i, read_reg(slv_addr, i));

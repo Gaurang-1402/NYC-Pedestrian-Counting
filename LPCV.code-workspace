@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "NYC-Pedestrian-Detection",
+			"path": "../../.."
+		}
+	],
+	"settings": {
+		"terminal.integrated.shellIntegration.decorationsEnabled": "both",
+		"terminal.integrated.s"
+		"terminal.integrated.shellArgs": ["/k", ""]
+	}
+}

@@ -141,7 +141,7 @@ bool ll_cam_start(cam_obj_t *cam, int frame_pos)
 
 static esp_err_t ll_cam_dma_init(cam_obj_t *cam)
 {
-    for (int x = (SOC_GDMA_PAIRS_PER_GROUP - 1); x >= 0; x--) {
+    for (int x = (SOC_GDMA_PAIRS_PER_GROUP_MAX - 1); x >= 0; x--) {
         if (GDMA.channel[x].in.link.addr == 0x0) {
             cam->dma_num = x;
             ESP_LOGI(TAG, "DMA Channel=%d", cam->dma_num);

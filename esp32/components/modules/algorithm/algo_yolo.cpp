@@ -26,6 +26,28 @@ using std::min;
 #include "tensorflow/lite/micro/micro_log.h"
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/schema/schema_generated.h"
+#include "../ttn-esp32/include/TheThingsNetwork.h"
+#include "../../../NYC_pedestrian_counter/main/config.h"
+#include "nvs_flash.h"
+#include "esp_wifi.h"
+#include "esp_system.h"
+
+#include <vector>
+
+#include "dsp_platform.h"
+#include "esp_dsp.h"
+#include "ekf.h"
+
+#include <vector>
+#include <cmath>
+#include <unordered_set>
+#include <unordered_map>
+
+#include "esp_timer.h"
+
+// Assume tracking_utils.h and kalman_box_tracker.h are defined with necessary functions
+
+#include "ekf_helper.hpp"
 
 #include "../ttn-esp32/include/TheThingsNetwork.h"
 #include "../../../NYC_pedestrian_counter/main/config.h"
@@ -45,12 +67,13 @@ static bool gEvent = true;
 static bool gReturnFB = true;
 static bool debug_mode = false;
 
-#define CONFIDENCE 40
-#define IOU 30
+#define CONFIDENCE 50
+#define IOU 45
+
+const uint16_t box_color[] = {0x0000, 0xFFFF, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0, 0x07FF, 0x07FF, 0x07FF, 0x07FF};
 
 uint8_t mac[6];
 char chipId[13];
-
 /*
 we use the esp_efuse_mac_get_default() function which gives us the base MAC address
 (in the form of a 6-byte array) that is unique to each ESP32 chip.
@@ -63,33 +86,21 @@ void get_chip_id(char *chipId)
     sprintf(chipId, "%02X%02X%02X%02X%02X%02X", baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
 }
 
-const uint16_t box_color[] = {0x1FE0, 0x07E0, 0x001F, 0xF800, 0xF81F, 0xFFE0};
-// Global counter
-int current_id = 0;
-
-// TODO come up with a clever way for unique ID
-// Function to generate a new ID
-int get_new_id()
+std::vector<std::vector<double>> getMeasurements(std::forward_list<yolo_t> yolo_list)
 {
-    return current_id++;
+    std::vector<std::vector<double>> measurements;
+    for (const auto &yolo : yolo_list)
+    {
+        std::vector<double> measurement;
+        measurement.reserve(5);
+        measurement.push_back(static_cast<double>(yolo.x));
+        measurement.push_back(static_cast<double>(yolo.y));
+        measurement.push_back(static_cast<double>(yolo.w));
+        measurement.push_back(static_cast<double>(yolo.h));
+        measurements.push_back(measurement);
+    }
+    return measurements;
 }
-
-// Start by defining a C structure to represent a centroid and a tracked object
-typedef struct Centroid
-{
-    int x;
-    int y;
-} Centroid;
-
-typedef struct TrackedObject
-{
-    int id;
-    Centroid centroid;
-    Centroid last_centroid; // Add this field to store the last position of the object
-    int disappeared;
-} TrackedObject;
-
-std::vector<TrackedObject> objects;
 
 /* ====================================================================== */
 
@@ -99,6 +110,8 @@ struct Point
 {
     int x, y;
     Point(int _x, int _y) : x(_x), y(_y) {}
+    Point() : x(0), y(0) {} // Default constructor
+    // Other members...
 };
 
 struct Line
@@ -112,12 +125,16 @@ int pedCountHorizontal = 0;
 int pedCountVertical = 0;
 int pedCountDiagonal = 0;
 
+Line horizontalLine(Point(0, 0), Point(0, 0));
+Line verticalLine(Point(0, 0), Point(0, 0));
+Line diagonalLine(Point(0, 0), Point(0, 0));
+
 // Function to find orientation of ordered triplet (p, q, r).
 // The function returns following values
 // 0 --> p, q and r are colinear
 // 1 --> Clockwise
 // 2 --> Counterclockwise
-int orientation(Point p, Point q, Point r)
+int orientation(const Point &p, const Point &q, const Point &r)
 {
     int val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
 
@@ -127,7 +144,7 @@ int orientation(Point p, Point q, Point r)
     return (val > 0) ? 1 : 2; // clock or counterclock wise
 }
 
-bool onSegment(Point p, Point q, Point r)
+bool onSegment(const Point &p, const Point &q, const Point &r)
 {
     if (q.x <= max(p.x, r.x) && q.x >= min(p.x, r.x) &&
         q.y <= max(p.y, r.y) && q.y >= min(p.y, r.y))
@@ -137,7 +154,7 @@ bool onSegment(Point p, Point q, Point r)
 }
 
 // Function that returns true if line segment 'p1q1' and 'p2q2' intersect.
-bool doIntersect(Point p1, Point q1, Point p2, Point q2)
+bool doIntersect(const Point &p1, const Point &q1, const Point &p2, const Point &q2)
 {
     // Find the four orientations needed for general and special cases
     int o1 = orientation(p1, q1, p2);
@@ -169,160 +186,177 @@ bool doIntersect(Point p1, Point q1, Point p2, Point q2)
     return false; // Doesn't fall in any of the above cases
 }
 
-bool crosses_line(Centroid last_centroid, Centroid centroid, Line line)
+std::unordered_map<int, Point> lastPositions;
+std::unordered_map<int, bool> crossedLine;
+
+// Implement the C++ version of the Sort class
+class Sort
 {
-    // Check if the line segment from last_centroid to centroid crosses the line.
-    // Return true if it does, false otherwise.
+public:
+    Sort(int max_age = 2, int min_hits = 2) : max_age(max_age), min_hits(min_hits), frame_count(0) {}
 
-    Point p1(last_centroid.x, last_centroid.y);
-    Point q1(centroid.x, centroid.y);
-
-    return doIntersect(p1, q1, line.p1, line.p2);
-}
-
-/* ====================================================================== */
-
-/* ====================================================================== */
-
-void register_object(Centroid centroid)
-{
-    TrackedObject new_object;
-    new_object.id = get_new_id();
-    new_object.centroid = centroid;
-    new_object.last_centroid = centroid;
-    new_object.disappeared = 0;
-    objects.push_back(new_object);
-}
-
-void deregister_object(int index)
-{
-    objects.erase(objects.begin() + index);
-}
-// Maximum distance between an object's old centroid and a new centroid for them
-// to be considered the same object.
-const int max_distance = 50;
-
-void update(std::vector<Centroid> new_centroids, Line horizontalLine, Line verticalLine, Line diagonalLine)
-{
-    if (new_centroids.empty())
+    std::vector<std::vector<double>> update(const std::vector<std::vector<double>> &dets, float s_time)
     {
-        for (auto &object : objects)
-        {
-            object.disappeared++;
+        frame_count++;
+        std::vector<std::vector<double>> trks;
+        // std::vector<std::vector<double>> trks(trackers.size(), std::vector<double>(5, 0));
+        std::vector<int> to_del;
+        std::vector<std::vector<double>> ret;
 
-            if (object.disappeared > 10)
+        for (size_t t = 0; t < trackers.size(); ++t)
+        {
+            float dt = (esp_timer_get_time() - s_time) / 10000000.0f;
+            std::vector<double> pos = trackers[t].predict(dt);
+            trks.push_back({pos[0], pos[1], pos[2], pos[3], 0});
+
+            if (std::isnan(pos[0]) || std::isnan(pos[1]) || std::isnan(pos[2]) || std::isnan(pos[3]))
             {
-                deregister_object(object.id);
-            }
-        }
-        return;
-    }
-
-    if (objects.empty())
-    {
-        for (const auto &centroid : new_centroids)
-        {
-            register_object(centroid);
-        }
-        std::cout << "\033[1;32mRegistered " << new_centroids.size() << " new objects.\033[0m\n";
-        return;
-    }
-
-    std::vector<std::vector<int>> distances(objects.size(), std::vector<int>(new_centroids.size()));
-    for (int i = 0; i < objects.size(); ++i)
-    {
-        for (int j = 0; j < new_centroids.size(); ++j)
-        {
-            distances[i][j] = std::abs(objects[i].centroid.x - new_centroids[j].x) +
-                              std::abs(objects[i].centroid.y - new_centroids[j].y);
-        }
-    }
-
-    for (int i = 0; i < objects.size(); ++i)
-    {
-        int min_distance = max_distance + 1;
-        int closest_j = -1;
-        for (int j = 0; j < new_centroids.size(); ++j)
-        {
-            if (distances[i][j] < min_distance)
-            {
-                min_distance = distances[i][j];
-                closest_j = j;
+                to_del.push_back(t);
             }
         }
 
-        if (closest_j != -1)
+        std::vector<std::vector<double>> temp_trks;
+        temp_trks.reserve(trks.size() - to_del.size());
+        for (size_t i = 0; i < trks.size(); ++i)
         {
-            // Before updating the current centroid, store its value in last_centroid
-            objects[i].last_centroid = objects[i].centroid;
-
-            // Now you can update the current centroid
-            objects[i].centroid = new_centroids[closest_j];
-            objects[i].disappeared = 0;
-
-            // Check if the object crossed the lines.
-            if (crosses_line(objects[i].last_centroid, objects[i].centroid, horizontalLine))
+            if (std::find(to_del.begin(), to_del.end(), static_cast<int>(i)) == to_del.end())
             {
-                pedCountHorizontal++;
+                temp_trks.emplace_back(std::move(trks[i]));
             }
-            if (crosses_line(objects[i].last_centroid, objects[i].centroid, verticalLine))
-            {
-                pedCountVertical++;
-            }
-            if (crosses_line(objects[i].last_centroid, objects[i].centroid, diagonalLine))
-            {
-                pedCountDiagonal++;
-            }
-
-            new_centroids[closest_j].x = new_centroids[closest_j].y = -1;
-            std::cout << "\033[1;34mObject " << objects[i].id << " updated with new centroid.\033[0m\n";
         }
-        else
+
+        trks = std::move(temp_trks);
+
+        trackers.erase(
+            std::remove_if(trackers.begin(), trackers.end(), [&](const KalmanBoxTracker &tracker)
+                           {
+                               size_t index = &tracker - &trackers[0];
+                               bool shouldDelete = std::find(to_del.begin(), to_del.end(), static_cast<int>(index)) != to_del.end();
+
+                               // remove object from lastPositions if it's being deleted from trackers
+                               if (shouldDelete)
+                               {
+                                   lastPositions.erase(tracker.id);
+                               }
+
+                               return shouldDelete; }),
+            trackers.end()
+
+        );
+
+        auto [matched, unmatched] =
+            associate_detections_to_trackers(dets, trks, 0.0);
+
+        auto &[unmatched_dets, unmatched_trks] = unmatched;
+
+        for (size_t t = 0; t < trackers.size(); ++t)
         {
-            objects[i].disappeared++;
-            std::cout << "\033[1;31mObject " << objects[i].id << " has disappeared.\033[0m\n";
+            if (std::find(unmatched_trks.begin(), unmatched_trks.end(), static_cast<int>(t)) == unmatched_trks.end())
+            {
+                auto x = [t](const std::vector<int> &pair)
+                { return pair[1] == static_cast<int>(t); };
+
+                int d = matched[static_cast<size_t>(std::find_if(matched.begin(), matched.end(), x) - matched.begin())][0];
+
+                if (!dets[d].empty())
+                {
+
+                    std::vector<double> state = trackers[t].get_state();
+                    int id = trackers[t].id;
+                    printf("ID: %d\n", id);
+                    int centerX = dets[d][0] + (dets[d][2] / 2);
+                    int centerY = dets[d][1] + (dets[d][3] / 2);
+
+                    // Check for intersection with each line and increment count
+                    printf("CrossedLine[%d]: %d\n", id, crossedLine[id]);
+                    if (lastPositions.count(id) > 0 && !crossedLine[id])
+                    {
+                        Point lastPos = lastPositions[id];
+                        if (doIntersect(lastPos, Point(centerX, centerY), horizontalLine.p1, horizontalLine.p2))
+                        {
+                            pedCountHorizontal++;
+                            crossedLine[id] = true;
+                        }
+                        if (doIntersect(lastPos, Point(centerX, centerY), verticalLine.p1, verticalLine.p2))
+                        {
+                            pedCountVertical++;
+                            crossedLine[id] = true;
+                        }
+                        if (doIntersect(lastPos, Point(centerX, centerY), diagonalLine.p1, diagonalLine.p2))
+                        {
+                            pedCountDiagonal++;
+                            crossedLine[id] = true;
+                        }
+                    }
+
+                    // Update last position of this object
+                    lastPositions[id] = Point(centerX, centerY);
+                    float dt = (esp_timer_get_time() - s_time) / 10000000.0f;
+                    trackers[t].update(dets[d], dt);
+                }
+            }
         }
+
+        for (auto i : unmatched_dets)
+        {
+            KalmanBoxTracker tracker(dets[i]);
+            trackers.emplace_back(tracker);
+        }
+
+        const size_t tracker_size = trackers.size();
+
+        std::vector<KalmanBoxTracker> temp_trackers2;
+
+        for (size_t i = 0; i < tracker_size; ++i)
+        {
+            std::vector<double> d = trackers[i].get_state();
+            if ((trackers[i].time_since_update < 5) && (trackers[i].hit_streak >= min_hits || frame_count <= min_hits))
+            {
+                ret.emplace_back(std::vector<double>(d.begin(), d.end()));
+                ret.back().push_back(trackers[i].id + 1);
+            }
+            if (trackers[i].time_since_update <= max_age)
+            {
+                temp_trackers2.emplace_back(trackers[i]);
+            }
+            else // if a tracker is not being moved to temp_trackers2, it is essentially being removed, so remove it from lastPositions as well
+            {
+                lastPositions.erase(trackers[i].id);
+            }
+        }
+        trackers = std::move(temp_trackers2);
+
+        return ret;
     }
 
-    for (const auto &centroid : new_centroids)
-    {
-        if (centroid.x != -1 && centroid.y != -1)
-        {
-            register_object(centroid);
-            std::cout << "\033[1;33mRegistered new object with centroid.\033[0m\n";
-        }
-    }
-}
+    std::vector<KalmanBoxTracker>
+        trackers;
 
-/* ====================================================================== */
-
-std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point);
+private:
+    int max_age;
+    int min_hits;
+    int frame_count;
+};
 
 /* LoRa setup */
-
 // NOTE:
 // The LoRaWAN frequency and the radio chip must be configured by running 'idf.py menuconfig'.
 // Go to Components / The Things Network, select the appropriate values and save.
-
 // Copy the below hex strings from the TTN console (Applications > Your application > End devices
 // > Your device > Activation information)
-
 // AppEUI (sometimes called JoinEUI)
 const char *appEui = APPEUI;
 // DevEUI
 const char *devEui = DEVEUI;
 // AppKey
 const char *appKey = APPKEY;
-
 static TheThingsNetwork ttn;
 const unsigned TX_INTERVAL = 20;
 static uint8_t msgData[] = "Hello, world";
-
 void sendMessage(void *pvParameter)
 {
     printf("Sending message...\n");
     /* Prepare the payload */
-
     /*
     In this code, we're sending a payload that is 7 bytes long: the first 6 bytes are the MAC address and the last byte is the count.
     This is a very compact representation that fits well within the constraints of LoRaWAN.
@@ -338,20 +372,19 @@ void sendMessage(void *pvParameter)
     }
     printf("Pedestrian Count Max: %d\n", max(max(pedCountHorizontal, pedCountVertical), pedCountDiagonal));
     payload[6] = max(max(pedCountHorizontal, pedCountVertical), pedCountDiagonal);
-
     /* Send the payload */
     TTNResponseCode res = ttn.transmitMessage(payload, sizeof(payload));
-
     printf(res == kTTNSuccessfulTransmission ? "Message sent.\n" : "Transmission failed.\n");
     if (res == kTTNSuccessfulTransmission)
     {
         pedCountHorizontal = 0;
         pedCountVertical = 0;
         pedCountDiagonal = 0;
+        // clear measurement hashmap
+        crossedLine.clear();
     }
     // vTaskDelay(TX_INTERVAL * pdMS_TO_TICKS(1000));
 }
-
 void messageReceived(const uint8_t *message, size_t length, ttn_port_t port)
 {
     printf("Message of %d bytes received on port %d:", length, port);
@@ -359,18 +392,19 @@ void messageReceived(const uint8_t *message, size_t length, ttn_port_t port)
         printf(" %02x", message[i]);
     printf("\n");
 }
-
 uint32_t ticks_now(void)
 {
     TickType_t currentTick = xTaskGetTickCount();
     return pdTICKS_TO_MS(currentTick);
 }
-
 void print_time(void)
 {
     uint32_t currentTime = ticks_now();
     printf("Current time in milliseconds: %u\n", currentTime);
 }
+
+std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, uint8_t threshold, uint8_t nms, uint16_t width, uint16_t height, int num_record, int8_t num_class, float scale, int zero_point);
+
 // Globals, used for compatibility with Arduino-style sketches.
 namespace
 {
@@ -407,9 +441,14 @@ static void task_process_handler(void *arg)
     printf("Format: {\"height\": %d, \"width\": %d, \"channels\": %d, \"model\": \"yolo\"}\r\n", h, w, c);
 
     // Initialize lines
-    Line horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
-    Line verticalLine = Line(Point(w / 2, 0), Point(w / 2, h));   // vertical line
-    Line diagonalLine = Line(Point(0, 0), Point(w, h));           // diagonal line
+    horizontalLine = Line(Point(0, h / 2), Point(w, h / 2)); // horizontal line
+    verticalLine = Line(Point(w / 2, 0), Point(w / 2, h));   // vertical line
+    diagonalLine = Line(Point(0, 0), Point(w, h));           // diagonal line
+
+    // Initialize tracked objects
+
+    // SORT class (counting)
+    Sort sort;
     int init_time = (int)(esp_timer_get_time() / 1000);
 
     while (true)
@@ -457,6 +496,7 @@ static void task_process_handler(void *arg)
 
                 // Run the model on this input and make sure it succeeds.
                 int start_time = esp_timer_get_time() / 1000;
+                float s_time = esp_timer_get_time();
 
                 if (kTfLiteOk != interpreter->Invoke())
                 {
@@ -475,31 +515,44 @@ static void task_process_handler(void *arg)
 
                 uint32_t records = output->dims->data[1];
                 uint32_t num_class = output->dims->data[2] - OBJECT_T_INDEX;
-                // int16_t num_element = num_class + OBJECT_T_INDEX;
 
+                // YOLO list
                 _yolo_list = nms_get_obeject_topn(output->data.int8, records, CONFIDENCE, IOU, w, h, records, num_class, scale, zero_point);
 
-                fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // Red
+                // fb_gfx_drawFastHLine(frame, horizontalLine.p1.x, horizontalLine.p1.y, w, 0xFF0000); // black
                 // Draw vertical line
-                fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // Green
+                // fb_gfx_drawFastVLine(frame, verticalLine.p1.x, verticalLine.p1.y, h, 0x00FF00); // yellow
                 // Draw diagonal line
-                fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
+                // fb_gfx_drawLine(frame, diagonalLine.p1.x, diagonalLine.p1.y, diagonalLine.p2.x, diagonalLine.p2.y, 0x0000FF); // Blue
 
-                std::vector<Centroid> centroids;
-                for (const auto &object : _yolo_list)
+                std::vector<std::vector<double>>
+                    measurements = getMeasurements(_yolo_list);
+
+                // float dt = (esp_timer_get_time() - s_time) / 1000000.0; // Time in seconds
+
+                // printf("dt: %f\r\n", dt);
+
+                std::vector<std::vector<double>> combined;
+                combined.insert(combined.end(), measurements.begin(), measurements.end());
+
+                measurements = sort.update(measurements, s_time);
+                combined.insert(combined.end(), measurements.begin(), measurements.end());
+
+                for (auto &measurement : measurements)
                 {
-                    Centroid centroid;
-                    centroid.x = object.x + object.w / 2;
-                    centroid.y = object.y + object.h / 2;
-                    centroids.push_back(centroid);
+                    printf("Measurement: %f, %f, %f, %f\r\n", measurement[0], measurement[1], measurement[2], measurement[3]);
+
+                    // draw
+                    // fb_gfx_drawRect(frame, measurement[0], measurement[1], measurement[2], measurement[3], 0xFF0000); // Red
                 }
+
+                // printf("Number of tracks: %d\r\n", sort.trackers.size());
+                // Update SORT
 
                 // Print pedestrian counts
                 std::cout << "\033[1;33mPedestrian Count for Horizontal Line: " << pedCountHorizontal << "\033[0m\n";
                 std::cout << "\033[1;33mPedestrian Count for Vertical Line: " << pedCountVertical << "\033[0m\n";
                 std::cout << "\033[1;33mPedestrian Count for Diagonal Line: " << pedCountDiagonal << "\033[0m\n"; // Yellow
-
-                update(centroids, horizontalLine, verticalLine, diagonalLine);
 
                 printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n", (dsp_end_time - dsp_start_time), (end_time - start_time), 0);
                 bool found = false;
@@ -513,13 +566,19 @@ static void task_process_handler(void *arg)
                     printf("    [\n");
                     for (auto &yolo : _yolo_list)
                     {
-                        // fb_gfx_drawRect(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2, yolo.w, yolo.h, 0x1FE0);
+                        yolo.x = uint16_t(float(yolo.x) / float(w) * float(frame->width));
+                        yolo.y = uint16_t(float(yolo.y) / float(h) * float(frame->height));
+                        yolo.w = uint16_t(float(yolo.w) / float(w) * float(frame->width));
+                        yolo.h = uint16_t(float(yolo.h) / float(h) * float(frame->height));
+                        // fb_gfx_drawRect2(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2, yolo.w, yolo.h, box_color[index % (sizeof(box_color) / sizeof(box_color[0]))], 4);
                         // fb_gfx_printf(frame, yolo.x - yolo.w / 2, yolo.y - yolo.h / 2 - 5, 0x1FE0, 0x0000, "%s", g_yolo_model_classes[yolo.target]);
-                        printf("        {\"class\": \"%s\", \"x\": %d, \"y\": %d, \"w\": %d, \"h\": %d, \"confidence\": %d},\n", g_yolo_model_classes[yolo.target], yolo.x, yolo.y, yolo.w, yolo.h, yolo.confidence);
+                        printf("        {\"class\": \"%d\", \"x\": %d, \"y\": %d, \"w\": %d, \"h\": %d, \"confidence\": %d},\n", yolo.target, yolo.x, yolo.y, yolo.w, yolo.h, yolo.confidence);
+                        index++;
                     }
                     printf("    ]\n");
                 }
 
+                printf("Number of tracks: %d\r\n", sort.trackers.size());
                 if (!found)
                 {
                     printf("    No objects found\n");
@@ -586,16 +645,13 @@ int register_algo_yolo(const QueueHandle_t frame_i,
     gReturnFB = camera_fb_return;
 
     // Communication
-
     esp_err_t err;
     // Initialize the GPIO ISR handler service
     err = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
     ESP_ERROR_CHECK(err);
-
     // Initialize the NVS (non-volatile storage) for saving and restoring the keys
     err = nvs_flash_init();
     ESP_ERROR_CHECK(err);
-
     // Initialize SPI bus
     spi_bus_config_t spi_bus_config;
     memset(&spi_bus_config, 0, sizeof(spi_bus_config));
@@ -604,13 +660,10 @@ int register_algo_yolo(const QueueHandle_t frame_i,
     spi_bus_config.sclk_io_num = TTN_PIN_SPI_SCLK;
     err = spi_bus_initialize(TTN_SPI_HOST, &spi_bus_config, TTN_SPI_DMA_CHAN);
     ESP_ERROR_CHECK(err);
-
     // Configure the SX127x pins
     ttn.configurePins(TTN_SPI_HOST, TTN_PIN_NSS, TTN_PIN_RXTX, TTN_PIN_RST, TTN_PIN_DIO0, TTN_PIN_DIO1);
-
     // The below line can be commented after the first run as the data is saved in NVS
     ttn.provision(devEui, appEui, appKey);
-
     // Register callback for received messages
     ttn.onMessage(messageReceived);
     //    ttn.setAdrEnabled(false);
@@ -692,6 +745,8 @@ int register_algo_yolo(const QueueHandle_t frame_i,
     // Get information about the memory area to use for the model's input.
     input = interpreter->input(0);
 
+    printf("Starting\n");
+
     if (ttn.join())
     {
         printf("Joined.\n");
@@ -706,10 +761,6 @@ int register_algo_yolo(const QueueHandle_t frame_i,
         printf("Join failed. Goodbye\n");
         return 0;
     }
-
-    // xTaskCreatePinnedToCore(task_process_handler, TAG, 4 * 1024, NULL, 5, NULL, 0);
-    // if (xQueueEvent)
-    //     xTaskCreatePinnedToCore(task_event_handler, TAG, 4 * 1024, NULL, 5, NULL, 1);
 
     return 0;
 }
@@ -839,16 +890,28 @@ std::forward_list<yolo_t> nms_get_obeject_topn(int8_t *dataset, uint16_t top_n, 
                 }
             }
 
-            int x = int(float(float(dataset[i * num_element + OBJECT_X_INDEX] - zero_point) * scale) * width);
-            int y = int(float(float(dataset[i * num_element + OBJECT_Y_INDEX] - zero_point) * scale) * height);
-            int w = int(float(float(dataset[i * num_element + OBJECT_W_INDEX] - zero_point) * scale) * width);
-            int h = int(float(float(dataset[i * num_element + OBJECT_H_INDEX] - zero_point) * scale) * height);
+            float x = float(dataset[i * num_element + OBJECT_X_INDEX] - zero_point) * scale;
+            float y = float(dataset[i * num_element + OBJECT_Y_INDEX] - zero_point) * scale;
+            float w = float(dataset[i * num_element + OBJECT_W_INDEX] - zero_point) * scale;
+            float h = float(dataset[i * num_element + OBJECT_H_INDEX] - zero_point) * scale;
 
-            obj.x = CLIP(x, 0, width);
-            obj.y = CLIP(y, 0, height);
-            obj.w = CLIP(w, 0, width);
-            obj.h = CLIP(h, 0, height);
-            obj.confidence = int(float(confidence) * 100);
+            if (rescale)
+            {
+                obj.x = CLIP(int(x * width), 0, width);
+                obj.y = CLIP(int(y * height), 0, height);
+                obj.w = CLIP(int(w * width), 0, width);
+                obj.h = CLIP(int(h * height), 0, height);
+            }
+            else
+            {
+                obj.x = CLIP(int(x), 0, width);
+                obj.y = CLIP(int(y), 0, height);
+                obj.w = CLIP(int(w), 0, width);
+                obj.h = CLIP(int(h), 0, height);
+            }
+            obj.w = (obj.x + obj.w) > width ? (width - obj.x) : obj.w;
+            obj.h = (obj.y + obj.h) > height ? (height - obj.y) : obj.h;
+            obj.confidence = confidence;
             if (num_obj[obj.target] >= top_n)
             {
                 yolo_obj_list[obj.target].sort(_object_comparator_reverse);

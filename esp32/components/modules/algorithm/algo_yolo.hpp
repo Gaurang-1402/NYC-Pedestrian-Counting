@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ALGO_YOLO_HPP
+#define ALGO_YOLO_HPP
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -30,3 +31,5 @@ int register_algo_yolo(const QueueHandle_t frame_i,
                        const QueueHandle_t result,
                        const QueueHandle_t frame_o,
                        const bool camera_fb_return);
+
+#endif // ALGO_YOLO_HPP

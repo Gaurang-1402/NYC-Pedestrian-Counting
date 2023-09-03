@@ -4,8 +4,7 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
-#include <Eigen/Dense>
-
+#include <eigen-3.4.0/Eigen/Dense>
 Eigen::MatrixXd pdist(const Eigen::MatrixXd &a, const Eigen::MatrixXd &b);
 Eigen::MatrixXd cosine_distance(const Eigen::MatrixXd &a, const Eigen::MatrixXd &b, bool data_is_normalized = false);
 Eigen::VectorXd nn_euclidean_distance(const Eigen::MatrixXd &x, const Eigen::MatrixXd &y);

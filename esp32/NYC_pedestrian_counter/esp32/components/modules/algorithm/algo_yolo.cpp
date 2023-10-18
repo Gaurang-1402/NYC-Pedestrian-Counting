@@ -28,7 +28,7 @@ using std::min;
 #include "tensorflow/lite/schema/schema_generated.h"
 
 #include "../ttn-esp32/include/TheThingsNetwork.h"
-#include "../../../NYC_pedestrian_counter/main/config.h"
+#include "config.h"
 
 #include "nvs_flash.h"
 #include "esp_wifi.h"

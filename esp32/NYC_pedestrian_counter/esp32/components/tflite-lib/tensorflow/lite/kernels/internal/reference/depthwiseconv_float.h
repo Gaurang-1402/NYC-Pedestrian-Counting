@@ -92,7 +92,7 @@ inline void DepthwiseConv(
       }
     }
   }
-}
+
 
 }  // end namespace reference_ops
 }  // end namespace tflite

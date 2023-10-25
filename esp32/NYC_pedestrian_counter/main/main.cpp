@@ -3,7 +3,7 @@
 #include "driver/gpio.h"
 #include "nvs_flash.h"
 #include <string.h>
-#include "TheThingsNetwork.h"
+//#include "TheThingsNetwork.h"
 
 #include "config.h"
 

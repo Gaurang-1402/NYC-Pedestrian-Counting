@@ -58,8 +58,7 @@ static void task_process_handler(void *arg)
 
     while (true)
     {
-        if (gEvent)
-        {
+        
             if (xQueueReceive(xQueueDataI, &data, portMAX_DELAY))
             {
                 int dsp_start_time = esp_timer_get_time() / 1000;
@@ -97,7 +96,7 @@ static void task_process_handler(void *arg)
             }
         }
     }
-}
+
 
 static void task_event_handler(void *arg)
 {

@@ -67,8 +67,7 @@ static void task_process_handler(void *arg)
 
     while (true)
     {
-        if (gEvent)
-        {
+        
             meter_t obj = {0, 0};
 
             if (xQueueReceive(xQueueFrameI, &frame, portMAX_DELAY))
@@ -151,7 +150,7 @@ static void task_process_handler(void *arg)
             }
         }
     }
-}
+
 
 static void task_event_handler(void *arg)
 {

@@ -1,0 +1,6 @@
+set(COMPONENT_SRCS  "common/ekf.cpp")
+set(COMPONENT_ADD_INCLUDEDIRS   "include")
+cmake_minimum_required(VERSION 3.5)
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+add_compile_options("-Wno-format")
+register_component()
